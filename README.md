@@ -1,2 +1,9 @@
-# Sarbacane
-Un outil pour tester la détection des EDRs et des AVs
+```
+   _______  _______  ____  ____
+  / __/ _ \/ __/ _ )/ __ \/ __/
+ / _// , _/ _// _  / /_/ /\ \  
+/___/_/|_/___/____/\____/___/
+    by : 0xRzdhop
+```
+
+
