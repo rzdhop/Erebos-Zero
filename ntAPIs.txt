@@ -1,8 +1,0 @@
-NtAllocateVirtualMemory
-NtWriteVirtualMemory
-NtProtectVirtualMemory
-NtResumeThread
-VirtualFreeEx
-VirtualAllocExNuma
-NtWaitForSingleObject
-NtQueueApcThread
