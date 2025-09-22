@@ -3,10 +3,6 @@
 #include <stdlib.h>
 #include <tlhelp32.h>
 
-#include <windows.h>
-#include <tlhelp32.h>
-#include <stdio.h>
-
 DWORD get_pid_from_proc_name(IN LPCSTR lpProcessName) {
     DWORD PID = 0;
     PROCESSENTRY32 pe32;
