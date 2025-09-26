@@ -20,9 +20,17 @@ Grosso-modo, pour le moment voici les techniques implémentés :
 │ ├── Basic Anti-VM
 │ └── Basic Anti-Debug
 │
-└── dll
-  ├── Basic DLL injection
-  └── shellcode Reflective DLL injection (sRDI)
+├── dll
+│ ├── Basic DLL injection
+│ └── shellcode Reflective DLL injection (sRDI)
+│
+├── Function stomping injection
+├── Mapping injection
+└── Thread hijacking
+
+/misc
+├── PPID Spoofing
+└── Process Argument Spoofing (ProcMon + System informer/Process Hacker bypass)
 
 /bypass
 ├── EDR
@@ -35,7 +43,13 @@ Grosso-modo, pour le moment voici les techniques implémentés :
 └── KASLR
   ├── Cache Prefetch side-channel
   └── NtQuerySystemInformation
+
+/stagers
+└── Web Stagers
+  └── basic HTTP stager
+
 ```
+
 
 ## ⚠️ Disclaimer
 
