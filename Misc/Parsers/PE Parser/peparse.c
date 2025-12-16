@@ -66,12 +66,13 @@ int parse_NT_hdr(FILE* fp, IMAGE_DOS_HEADER dosHdr) {
     printf("\n\t[*] Offset : 0x%02x", dosHdr.e_lfanew);
 
     IMAGE_FILE_HEADER ntFileHdr = ntHdr.FileHeader;
+    printf("\n\t[*] NT File Header");
 
-    printf("\n\t[*] Number of sections : %d", ntFileHdr.NumberOfSections);
-    printf("\n\t[*] NT signature :\n");
+    printf("\n\t\t[*] Number of sections : %d", ntFileHdr.NumberOfSections);
+    printf("\n\t\t[*] NT signature :\n");
     hexdump((char*)&ntHdr, sizeof(IMAGE_NT_SIGNATURE));
-    printf("\n\t[+] Image File Header :");
-    printf("\n\t\t[*] Machine supported : 0x%x ", ntFileHdr.Machine);
+    printf("\n\t\t[+] Image File Header :");
+    printf("\n\t\t\t[*] Machine supported : 0x%x ", ntFileHdr.Machine);
     switch (ntFileHdr.Machine)
     {
     case 0x8664:
@@ -92,22 +93,22 @@ int parse_NT_hdr(FILE* fp, IMAGE_DOS_HEADER dosHdr) {
     }
 
     WORD chara = ntFileHdr.Characteristics;
-    printf("\n\t\t[*] File Characteristics : 0x%x ", chara);
+    printf("\n\t\t\t[*] File Characteristics : 0x%x ", chara);
     if (chara & IMAGE_FILE_EXECUTABLE_IMAGE) printf("(EXE)");
     if (chara & IMAGE_FILE_LOCAL_SYMS_STRIPPED) printf("(Symbols Stripped)");
     if (chara & IMAGE_FILE_DLL) printf("(DLL)");
     if (chara & IMAGE_FILE_SYSTEM) printf("(SYSTEM)");
     if (chara & IMAGE_FILE_RELOCS_STRIPPED) printf("(NO RELOCS - NO ASLR)");
 
-    printf("\n\t[*] Number of sections : %d", ntFileHdr.NumberOfSections);
-    printf("\n\t[*] Number of symbols : %d", ntFileHdr.NumberOfSymbols);
+    printf("\n\t\t[*] Number of sections : %d", ntFileHdr.NumberOfSections);
+    printf("\n\t\t[*] Number of symbols : %d", ntFileHdr.NumberOfSymbols);
     time_t ltime = ntFileHdr.TimeDateStamp;
-    printf("\n\t[*] Linker's timestamp : %ld > %s", ntFileHdr.TimeDateStamp, asctime(localtime(&ltime)));
+    printf("\n\t\t[*] Linker's timestamp : %ld > %s", ntFileHdr.TimeDateStamp, asctime(localtime(&ltime)));
     printf("\t[*] COFF symbol's table offset : 0x%x", ntFileHdr.PointerToSymbolTable);
 
     DWORD symtab_sz  = ntFileHdr.NumberOfSymbols * sizeof(IMAGE_SYMBOL);
     int sTableOff = ntFileHdr.PointerToSymbolTable + symtab_sz;
-    printf("\n\t[*] PE String table : 0x%x", sTableOff);
+    printf("\n\t[*] PE String table offset : 0x%x", sTableOff);
 
 
     printf("\n\t[*] Symbol extract :\n");
@@ -120,6 +121,7 @@ int parse_NT_hdr(FILE* fp, IMAGE_DOS_HEADER dosHdr) {
         fread(&sym, sizeof(IMAGE_SYMBOL), 1, fp);
 
         // Nom court (inline)
+        // défini comme : BYTE ShortName[8];
         if (sym.N.Name.Short != 0) {
             memcpy(name, sym.N.ShortName, 8);
             name[8] = '\0';
@@ -149,13 +151,41 @@ int parse_NT_hdr(FILE* fp, IMAGE_DOS_HEADER dosHdr) {
 
     DWORD optionalHdr_sz = ntFileHdr.SizeOfOptionalHeader;
 
-    printf("\n\t[*] Optional Header offset : 0x%x", optionalHdr_offset);
-    printf("\n\t[*] Optional Header size   : 0x%x", optionalHdr_sz);
-    return 0;
-}
+    printf("\n[*] Optional Header offset : 0x%x", optionalHdr_offset);
+    printf("\n[*] Optional Header size   : 0x%x", optionalHdr_sz);
 
-int parse_Opt_hdr(FILE* fp) {
-    
+    IMAGE_OPTIONAL_HEADER64 optStruct = ntHdr.OptionalHeader;
+    printf("\n[+] Optionnal Header :");
+    printf("\n\t\t[*] Magic : 0x%x", optStruct.Magic);
+    switch (optStruct.Magic)
+    {
+    case IMAGE_NT_OPTIONAL_HDR32_MAGIC:
+        printf(" (x86)");
+        break;
+    case IMAGE_NT_OPTIONAL_HDR64_MAGIC:
+        printf(" (x64)");
+        break;
+    case IMAGE_ROM_OPTIONAL_HDR_MAGIC:
+        printf(" (ROM image)");
+        break;
+    default:
+        printf(" (unknown)");
+        break;
+    }
+    printf("\n\t\t[*] Entrypoint offset : 0x%x", optStruct.AddressOfEntryPoint);
+    printf("\n\t\t[*] Base of code RVA : 0x%x", optStruct.BaseOfCode);
+    printf("\n\t\t[*] Code sections size : 0x%x bytes", optStruct.SizeOfCode);
+    printf("\n\t\t[*] Data sections size : 0x%x bytes", optStruct.SizeOfInitializedData);
+    printf("\n\t\t[*] Section's alignment : 0x%x", optStruct.SectionAlignment);
+    printf("\n\t\t[*] File alignment : 0x%x", optStruct.FileAlignment);
+    printf("\n\t\t[*] ImageBase : 0x%x", optStruct.ImageBase);
+    printf("\n\t\t[*] Image size : 0x%x bytes", optStruct.SizeOfImage);
+    printf("\n\t\t[*] Headers size aligned : 0x%x", optStruct.SizeOfHeaders);
+    printf("\n\t\t[*] Checksum : 0x%x", optStruct.CheckSum);
+    printf("\n\t\t[*] DataDirectory size : 0x%x", optStruct.NumberOfRvaAndSizes);
+
+
+
 
     return 0;
 }
@@ -175,10 +205,6 @@ int main (int argc, char **argv){
 
     printf("\n[+] Parsing NT Header");
     parse_NT_hdr(fp, dosHdr);
-
-    
-    printf("\n[+] Parsing Optional Header");
-    parse_Opt_hdr(fp);
 
 
     printf("\n[+].... to implement.");
