@@ -62,8 +62,8 @@ class Implant(threading.Thread):
     
     def run(self):
         try:
-            #self.SendImplant(1, defaultCmdData) 
-            self.SendImplant(2, defaultShellCode)
+            self.SendImplant(1, defaultCmdData) 
+            #self.SendImplant(2, defaultShellCode)
         finally:
             self.implant_sock.close()
             self.context.remove_implant(self)
