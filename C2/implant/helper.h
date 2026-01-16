@@ -1,11 +1,19 @@
 #pragma once
 
+#define WIN32_LEAN_AND_MEAN
+
+#include <winsock2.h>
+
+#include <ws2tcpip.h>
+#include <wininet.h>
+
+#include <tlhelp32.h>
+
 #include <stdio.h>
 #include <stdlib.h>
-#include <windows.h>
-#include <wininet.h>
+
 #include <winternl.h>
-#include <tlhelp32.h>
+#include <windows.h>
 
 typedef struct _C2_PACKET {
     DWORD CmdId;

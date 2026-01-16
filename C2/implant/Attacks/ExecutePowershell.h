@@ -1,12 +1,5 @@
 #pragma once
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <windows.h>
-#include <wininet.h>
-#include <winternl.h>
-#include <tlhelp32.h>
-
 #include "..\helper.h"
 
 typedef NTSTATUS (NTAPI *_NtQueryInformationProcess)(
