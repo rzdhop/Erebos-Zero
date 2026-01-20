@@ -21,8 +21,37 @@ typedef struct _STACK_CONFIG {
 extern PVOID spoofCall(PSTACK_CONFIG pConfig);
 
 BOOL SetupConfig(PSTACK_CONFIG pConfig, PVOID pRopGadget, PVOID pEbx, PVOID pTarget, PVOID pArgs, DWORD dwNumberOfArgs) {
+    BOOL state = TRUE;
 
 
+    return state;
+
+}
+
+PVOID FindROPGadget(LPCSTR moduleName)
+{
+    // Gadget: FF 23 -> jmp QWORD PTR [rbx]
+    PBYTE hModule = (PBYTE)GetModuleHandleA(moduleName);
+
+    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)hModule;
+    PIMAGE_NT_HEADERS64 nt = (PIMAGE_NT_HEADERS64)(hModule + dos->e_lfanew);
+
+    DWORD textRva  = nt->OptionalHeader.BaseOfCode;
+    DWORD textSize = nt->OptionalHeader.SizeOfCode;
+
+    PBYTE text = hModule + textRva;
+
+    for (DWORD i = 0; i < textSize - 1; i++)
+    {
+        if (text[i] == 0xFF && text[i + 1] == 0x23)
+        {
+            PVOID gadget = &text[i];
+            printf("[*] Found ROP gadget (FF 23) in %s @ %p\n", moduleName, gadget);
+            return gadget;
+        }
+    }
+
+    return NULL;
 }
 
 int main() {
