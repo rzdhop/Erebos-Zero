@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+// gcc injector.c spoofer.o -o injector.exe -lkernel32
+
 /*
 - before executing the shellcode setup the return Addr as one instruction of kernel32.dll (for exemple)
 - This instruction need to be a JMP to a dereferenced register so that we can set the register value ourselves
@@ -17,27 +19,35 @@ typedef struct _STACK_CONFIG {
     DWORD dwNumberOfArgs; //Nb of ars of the function
 } STACK_CONFIG, *PSTACK_CONFIG;
 
-extern PVOID spoofCall(PSTACK_CONFIG pConfig);
+extern PVOID SpoofCall(PSTACK_CONFIG pConfig);
 
-BOOL SetupConfig(PSTACK_CONFIG pConfig, PVOID pRopGadget, PVOID pTarget, DWORD dwNumberOfArgs) {
+BOOL SetupConfig(PSTACK_CONFIG pConfig, PVOID pRopGadget, PVOID pTarget, DWORD dwNumberOfArgs, ...) {
     BOOL state = TRUE;
     va_list additionalArgs;
 
+    printf("[*] Setup spoof calling\n");
+
     //According to the fascall ABI convention there is always 4 arguments RCX, RDX, R8, R9
     pConfig->dwNumberOfArgs = (dwNumberOfArgs > 4) ? dwNumberOfArgs : 4;
+    printf("[*] pConfig->dwNumberOfArgs set to %d\n", pConfig->dwNumberOfArgs);
     //If the arguments are impair we add une arg to make it %16 before the call (1 push = 8 bytes)
     pConfig->dwNumberOfArgs += (dwNumberOfArgs % 2 != 0) ? 1 : 0; //if odd than add one argument (8bytes) else 0
+    printf("[*] Added an extra %d Bytes to align the stack\n", (dwNumberOfArgs%2)*8);
 
     pConfig->pRopGadget = pRopGadget;
+    printf("[*] pConfig->pRopGadget set to 0x%p\n", pConfig->pRopGadget);
     pConfig->pTarget = pTarget;
-    pConfig->pArgs = malloc(8 * pConfig->dwNumberOfArgs); //allocate 8 bytes time number of args
+    printf("[*] pConfig->pTarget set to 0x%p\n", pConfig->pTarget);
 
+    pConfig->pArgs = malloc(8 * pConfig->dwNumberOfArgs); //allocate 8 bytes time number of args
+    printf("[*] Allocating %d bytes for %d args\n", (8 * pConfig->dwNumberOfArgs), pConfig->dwNumberOfArgs);
     memset(pConfig->pArgs, 0, 8 * pConfig->dwNumberOfArgs);
     
     //Say that there is more argument to our function avec DWORD dwNumberOfArgs
     va_start(additionalArgs, dwNumberOfArgs); //make additianlArgs point to the stack after DWORD dwNumberOfArgs and can be pop
     for (int i = 0; i < dwNumberOfArgs; i++){
         ((PUINT64)pConfig->pArgs)[i] = va_arg(additionalArgs, UINT64);
+        printf("[*] Populating pConfig->pArgs[%d]\n", i);
     }
 
     return state;
@@ -70,19 +80,21 @@ PVOID FindROPGadget(LPCSTR moduleName)
 }
 
 int main() {
+    
     PSTACK_CONFIG config_messagebox = malloc(sizeof(STACK_CONFIG));
     memset(config_messagebox, 0, sizeof(STACK_CONFIG));
-
-    PVOID pGadget = FindROPGadget("kernel32");
-
-    HANDLE hUser32 = GetModuleHandleA("User32");
+    printf("[*] Finding ROP gadget\n");
+    PVOID pGadget = FindROPGadget("kernel32.dll");
+    
+    HMODULE hUser32 = LoadLibraryA("user32.dll");
     PVOID pMessageBox = GetProcAddress(hUser32, "MessageBoxA");
 
     //MessageBoxA( NULL, "injected !", "Pwned by Rida", MB_ICONEXCLAMATION);
     SetupConfig(config_messagebox, pGadget, pMessageBox, 4, NULL, "injected !", "Pwned by Rida", MB_ICONEXCLAMATION);
 
-    spoofCall(config_messagebox);
+    printf("[*] Performing SpoofCall !\n");
+
+    SpoofCall(config_messagebox);
 
     return 0;
-
 }
