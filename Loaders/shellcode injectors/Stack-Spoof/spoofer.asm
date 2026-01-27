@@ -63,10 +63,12 @@ args_loop_end:
     mov rax, [r10 + pConfig.pRopGadget]
     mov [rsp], rax
     
-    mov rbx, gadget_fallback
+    mov [r10 + pConfig.pRbx], rbx
+    lea rbx, gadget_fallback
     jmp [r10 + pConfig.pTarget]
 
 gadget_fallback : 
+    mov rbx, [r10 + pConfig.pRbx]
     add rsp, r12  ; restore the stack as before we allocate for our call
     jmp rdi       ; return to our C code
 
