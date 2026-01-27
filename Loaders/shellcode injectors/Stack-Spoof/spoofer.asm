@@ -14,70 +14,59 @@ endstruc
 global SpoofCall
 section .text:
 
-SpoofCall2:
+;
+; [RSP+00] = return address
+; [RSP+08] = shadow space arg1
+; [RSP+10] = shadow space arg2
+; [RSP+18] = shadow space arg3
+; [RSP+20] = shadow space arg4
+; [RSP+28] = arg7
+; [RSP+30] = arg6
+; [RSP+38] = arg5
+
+SpoofCall:
     pop rdi
     mov r10, rcx ; argv[1] -> pConfig
-    mov r11, [r10 + pConfig.]
+
+    mov r11d, [r10 + pConfig.dwNumberOfArgs]
+    ;movzx r11, r11d
+    sub r11, 4 ; get the nb of args to be pushed into the stack
+
+    ; setting the 4 reserved registers in volatile registers
+    mov rcx, [r10 + pConfig.pArgs + 0x0]
+    mov rdx, [r10 + pConfig.pArgs + 0x8]
+    mov r8, [r10 + pConfig.pArgs + 0x10]
+    mov r9, [r10 + pConfig.pArgs + 0x18]
+    
+    lea r12, [r11*8]    ; add space for args (size in Bytes) 
+    add r12, 0x20       ; add sapce for 32 bytes shadow stack
+    add r12, 0x8        ; add space for return addr
+    
+    test r12, 8         ; check if r12 % 16 == 8 if so : we add 8 to align
+    jnz continue
+    add r12, 8          ; added the 8 bytes to be % 16 aligned
+continue :
+    sub rsp, r12        ; rsp has now space for args + shadows space + ret addr + alignment if needed
+    lea r11, [r11*8]    ; get Byte size of args to iterate 8 by 8
+
+args_loop:
+    cmp r11, 0
+    jz args_loop_end
+
+    sub r11, 8
+    mov r15, [r10 + pConfig.pArgs + 0x20 + r11] ; get last argument in pArgs
+    mov [rsp + 0x28 + r11], r15
+    jmp args_loop
 
 
+args_loop_end:
+    mov rax, [r10 + pConfig.pRopGadget]
+    mov [rsp], rax
+    
+    mov rbx, gadget_fallback
+    jmp [r10 + pConfig.pTarget]
 
-;MARCHE PAS PTN
-SpoofCall:
-    pop rdi                                     ;Get the original return Address
-    mov r10, rcx                                ;now r10 is our pConfig base offset
-    mov r12, [r10 + pConfig.dwNumberOfArgs]
-    sub r12, 4                                 ;Remove the registers args (rcx, rdx, r8, r9)
-    mov r13, [r10 + pConfig.pArgs]             ;r13 points to args   
-    mov rcx, [r13] 
-    mov rdx, [r13 + 8]
-    mov r8, [r13 + 16]
-    mov r9, [r13 + 24]
-
-    ; Now we rebuild the stack with the next args with a loop on pConfig.dwNumberOfArgs (r12 here)
-    lea r12, [r12*8]                          ;Calculating the effective size of args to store on stack
-                                                ;We could use imul but using lea is less noisy as it calcule r12 * 8 as if it was an addr even if it's not
-    sub rsp, r12                               ;Allocate space in stack
-
-loop_start :
-    cmp r12, 0                                  
-    jle loop_end
-    ;We add them from last arg to first
-    ;for (r12 = dwNumberOfArgs*8, r12 <= 0, r12 -= 8) {     ;r12 act a i
-    ;   r15 = rsp + r12
-    ;   r15 -= 8 
-    ;   rax = pArgs[-1]                           ;last position in python lol (r13 = pArgs)
-    ;   *r15 = rax
-    ;}
-    mov r15, rsp
-    add r15, r12
-    sub r15, 8
-    mov rax, [r13 + 32 + r12]                   ; rax = pArgs[dwArgs] - the last arg
-    mov [r15], rax
-    sub r12d, 8
-    jmp loop_start
-
-
-
-loop_end :
-    mov r13, [r10 + pConfig.dwNumberOfArgs]    ; save to after set back the stack
-    sub rsp, 32                                 ; The shadow space 32 before the call
-    mov rax, [r10 + pConfig.pRopGadget]         ; we will set the return addr to the ROP gadget : jmp rbx
-    push rax                                    ; the return addr of the function that will be called
-    test rsp, 0xf                               ; check if stack is aligned RSP%16 == 0
-    jz aligned
-    sub rsp, 8
-
-aligned :
-    lea rbx, [spoofedFallback]                  ; The spoofed function of kernel32 will jmp to [spoofedFallback]
-    mov [r10 + pConfig.pRbx], rbx
-    mov r12, [r10 + pConfig.pTarget]
-    jmp r12
-
-spoofedFallback:
-    lea r13, [r13*8]
-    add rsp, r13
-    add rsp, 32 
-    add rsp, 8
-    jmp rdi                                     ;The original return addr
-
+gadget_fallback : 
+    add rsp, r12  ; restore the stack as before we allocate for our call
+    jmp rdi       ; return to our C code
 
