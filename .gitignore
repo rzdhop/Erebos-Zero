@@ -1,3 +1,4 @@
 /.vscode
 *.o
 *.exe
+/Loaders/shellcode injectors/Stack-Spoof/try on

@@ -30,9 +30,6 @@ BOOL SetupConfig(PSTACK_CONFIG pConfig, PVOID pRopGadget, PVOID pTarget, DWORD d
     //According to the fascall ABI convention there is always 4 arguments RCX, RDX, R8, R9
     pConfig->dwNumberOfArgs = (dwNumberOfArgs > 4) ? dwNumberOfArgs : 4;
     printf("[*] pConfig->dwNumberOfArgs set to %d\n", pConfig->dwNumberOfArgs);
-    //If the arguments are impair we add une arg to make it %16 before the call (1 push = 8 bytes)
-    pConfig->dwNumberOfArgs += (dwNumberOfArgs % 2 != 0) ? 1 : 0; //if odd than add one argument (8bytes) else 0
-    printf("[*] Added an extra %d Bytes to align the stack\n", (dwNumberOfArgs%2)*8);
 
     pConfig->pRopGadget = pRopGadget;
     printf("[*] pConfig->pRopGadget set to 0x%p\n", pConfig->pRopGadget);
@@ -89,12 +86,21 @@ int main() {
     HMODULE hUser32 = LoadLibraryA("user32.dll");
     PVOID pMessageBox = GetProcAddress(hUser32, "MessageBoxA");
 
-    //MessageBoxA( NULL, "injected !", "Pwned by Rida", MB_ICONEXCLAMATION);
+    //typedef int (WINAPI* MessageBoxA_t)(HWND, LPCSTR, LPCSTR, UINT);
+    //MessageBoxA_t fnMessageBox = (MessageBoxA_t)pMessageBox;
+
+    // Appeler la fonction
+    //fnMessageBox(NULL, "injected !", "Pwned by Rida", MB_ICONEXCLAMATION);
+    
     SetupConfig(config_messagebox, pGadget, pMessageBox, 4, NULL, "injected !", "Pwned by Rida", MB_ICONEXCLAMATION);
 
     printf("[*] Performing SpoofCall !\n");
 
     SpoofCall(config_messagebox);
 
+    printf("[*] Done !\n");
+
+    free(config_messagebox->pArgs);
+    free(config_messagebox);
     return 0;
 }
