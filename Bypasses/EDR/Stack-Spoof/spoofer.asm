@@ -53,7 +53,7 @@ SpoofCall:
     ; Allocate stack space for:
     ;   - additional arguments (r11 * 8 bytes each)
     ;   - 32-byte shadow space (required by ABI)
-    ;   - alignment padding (to 16-byte boundary)
+    ;   - alignment padding (to %160)
     ; ------------------------------------------------------------------
     lea     r12, [r11 * 8]       ; r12 = total bytes needed for stack arguments
     add     r12, 0x20            ; +32 bytes shadow space for callee
