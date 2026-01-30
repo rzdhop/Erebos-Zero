@@ -13,7 +13,7 @@
 */
 typedef struct _STACK_CONFIG {
     PVOID pRopGadget; //PTR to Gadget
-    PVOID pRbx; //PTR to the RBX set for the kernel32 spoofed function
+    PVOID pRsp; //PTR to the RBX set for the kernel32 spoofed function
     PVOID pTarget; //PTR to function (MessageBoxA or stv)
     PVOID pArgs; //PTR to the args of the functions
     DWORD dwNumberOfArgs; //Nb of ars of the function
@@ -86,18 +86,14 @@ int main() {
     HMODULE hUser32 = LoadLibraryA("user32.dll");
     PVOID pMessageBox = GetProcAddress(hUser32, "MessageBoxA");
 
-    //typedef int (WINAPI* MessageBoxA_t)(HWND, LPCSTR, LPCSTR, UINT);
-    //MessageBoxA_t fnMessageBox = (MessageBoxA_t)pMessageBox;
-
-    // Appeler la fonction
-    //fnMessageBox(NULL, "injected !", "Pwned by Rida", MB_ICONEXCLAMATION);
-    
     SetupConfig(config_messagebox, pGadget, pMessageBox, 4, NULL, "injected !", "Pwned by Rida", MB_ICONEXCLAMATION);
 
     printf("[*] Performing SpoofCall !\n");
+    printf("[+] Open your system informer ! \n[Press any key to continue]\n");
+    getchar();
 
     SpoofCall(config_messagebox);
-
+    
     printf("[*] Done !\n");
 
     free(config_messagebox->pArgs);
