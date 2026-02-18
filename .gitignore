@@ -2,3 +2,4 @@
 *.o
 *.exe
 /Loaders/shellcode injectors/Stack-Spoof/try on
+/Bypasses/EDR/Stack-Spoof/Better with msvc

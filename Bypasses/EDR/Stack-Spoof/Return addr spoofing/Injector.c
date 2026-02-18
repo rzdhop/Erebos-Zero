@@ -13,7 +13,7 @@
 */
 typedef struct _STACK_CONFIG {
     PVOID pRopGadget; //PTR to Gadget
-    PVOID pRsp; //PTR to the RBX set for the kernel32 spoofed function
+    PVOID pRsp; //PTR to the RSP to ease my code
     PVOID pTarget; //PTR to function (MessageBoxA or stv)
     PVOID pArgs; //PTR to the args of the functions
     DWORD dwNumberOfArgs; //Nb of ars of the function
