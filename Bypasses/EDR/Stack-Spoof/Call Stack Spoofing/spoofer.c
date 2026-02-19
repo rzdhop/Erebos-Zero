@@ -231,14 +231,7 @@ int CallStackSpoof(PVOID pTarget, DWORD dwNumberOfArgs, ...){
     }
     va_end(additionalArgs);
 
-    printf("[*] Performing the call spoofed !\n");
-    printf("\noffsetof pRsp=%zu pS1ret=%zu S1sz=%zu pS2ret=%zu S2sz=%zu gadget=%zu gadgetsz=%zu pTarget=%zu pArgs=%zu nArgs=%zu\n",
-    offsetof(STACK_CONFIG,pRsp), offsetof(STACK_CONFIG,pSpoofed1_ret),
-    offsetof(STACK_CONFIG,Spoofed1StackSize), offsetof(STACK_CONFIG,pSpoofed2_ret),
-    offsetof(STACK_CONFIG,Spoofed2StackSize), offsetof(STACK_CONFIG,pRopGadget),
-    offsetof(STACK_CONFIG,SpoofedGagdetSize), offsetof(STACK_CONFIG,pTarget),
-    offsetof(STACK_CONFIG,pArgs), offsetof(STACK_CONFIG,dwNumberOfArgs));
-    
+    printf("[*] Performing the call spoofed !\n");    
     SpoofCall(stackConfig);
 
     free(stackConfig->pArgs);
