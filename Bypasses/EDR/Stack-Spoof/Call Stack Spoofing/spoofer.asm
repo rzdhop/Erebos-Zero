@@ -1,118 +1,111 @@
 ; nasm -f win64 spoofer.asm -o spoofer.o
 BITS 64
 DEFAULT REL
+
 struc STACK_CONFIG
-    .pRsp:                 RESQ 1      ; +0x00 (8)
-
-    .pSpoofed1_ret:        RESQ 1      ; +0x08 (8)
-    .Spoofed1StackSize:    RESD 1      ; +0x10 (4)
-    ._pad1:                RESD 1      ; +0x14 (4) align
-
-    .pSpoofed2_ret:        RESQ 1      ; +0x18 (8)
-    .Spoofed2StackSize:    RESD 1      ; +0x20 (4)
-    ._pad2:                RESD 1      ; +0x24 (4) align
-
-    .pRopGadget:           RESQ 1      ; +0x28 (8)
-    .SpoofedGagdetSize:    RESD 1
-    ._pad3:                RESD 1 
-
-    .pTarget:              RESQ 1     
-    .pArgs:                RESQ 1      
-
-    .dwNumberOfArgs:       RESD 1    
-    ._pad4:                RESD 1 
+    .pRsp:              RESQ 1      ; +0x00
+    .pSpoofed1_ret:     RESQ 1      ; +0x08
+    .Spoofed1StackSize: RESQ 1      ; +0x10
+    .pSpoofed2_ret:     RESQ 1      ; +0x18
+    .Spoofed2StackSize: RESQ 1      ; +0x20
+    .pRopGadget:        RESQ 1      ; +0x28
+    .SpoofedGadgetSize: RESQ 1      ; +0x30
+    .pTarget:           RESQ 1      ; +0x38
+    .pArgs:             RESQ 1      ; +0x40
+    .dwNumberOfArgs:    RESQ 1      ; +0x48
 endstruc
 
 global SpoofCall
-section .data
-    gadget_addr dq 0
+
+section .bss
+    gadget_target   RESQ 1
+    saved_rsp       RESQ 1
+    saved_ret       RESQ 1
 
 section .text
 SpoofCall:
-    push    r14                ; Save original R14 value on the stack
-    push    rdi                ; Save original RDI (non-volatile) on stack
-    push    rbx                ; Save original RBX (non-volatile)
-    push    r13                ; Save original R13 (non-volatile)
-    push    r12                ; Save original R12 (non-volatile)
-    push    r15                ; Save original R15 (non-volatile)
+    pop rax
+    mov [rel saved_ret], rax        ; save retaddr of caller
 
-    mov     r10, rcx           ; r10 = stackConfig
-    mov     [r10 + STACK_CONFIG.pRsp], rsp
-    
-    ; Here we stop the unwinding of RtlVirtualUnwind 
-    push    0
+    ; Save non-volatile regs
+    push r14
+    push rdi
+    push rbx
+    push r13
+    push r12
+    push r15
 
-    ; Setting the first stack frame (Here RtlUserThreadStart)
-    mov r13d, [r10 + STACK_CONFIG.Spoofed1StackSize]
-	sub rsp, r13
-	mov r13, [r10 + STACK_CONFIG.pSpoofed1_ret]
-	push r13
+    mov r13, rcx                    ; r13 = stackConfig
+    mov [rel saved_rsp], rsp        ; save rsp for the end restoration of non-volatile regs
 
-    ; Setting the Second stack frame (Here RtlUserThreadStart)
-    mov r13d, [r10 + STACK_CONFIG.Spoofed2StackSize]
-	sub rsp, r13
-	mov r13, [r10 + STACK_CONFIG.pSpoofed2_ret]
-	push r13
+    ; End unwinding of RtlVirtualUnwind
+    push 0
 
-    ; Now the stack frame of the gadget !
-    mov r13d, [r10 + STACK_CONFIG.SpoofedGagdetSize]
-	sub rsp, r13
-	mov r13, [r10 + STACK_CONFIG.pRopGadget]
-	push r13
+    ; === Frame 1 : RtlUserThreadStart ===
+    mov r10, [r13 + STACK_CONFIG.Spoofed1StackSize]
+    sub rsp, r10
+    mov r10, [r13 + STACK_CONFIG.pSpoofed1_ret]
+    push r10
 
-    mov     r11d, [r10 + STACK_CONFIG.dwNumberOfArgs]
-    sub     r11, 4                  ; r11 = (total args - 4) = count of args to place on stack (if any)
+    ; === Frame 2 : BaseThreadInitThunk ===
+    mov r10, [r13 + STACK_CONFIG.Spoofed2StackSize]
+    sub rsp, r10
+    mov r10, [r13 + STACK_CONFIG.pSpoofed2_ret]
+    push r10
 
-    mov     rax, [r10 + STACK_CONFIG.pArgs]   ; RAX = base address of arguments array
-    mov     rcx, [rax + 0x00]            ; RCX = arg0
-    mov     rdx, [rax + 0x08]            ; RDX = arg1
-    mov     r8,  [rax + 0x10]            ; R8  = arg2
-    mov     r9,  [rax + 0x18]            ; R9  = arg3
+    ; === Frame 3 : Gadget ===
+    mov r10, [r13 + STACK_CONFIG.SpoofedGadgetSize]
+    sub rsp, r10
+    mov r10, [r13 + STACK_CONFIG.pRopGadget]
+    push r10                        ; retaddr of MessageBoxA = gadget FF23
 
-    lea     r12, [r11 * 8]       ; r12 = total bytes needed for stack arguments
-    add     r12, 0x20            ; +32 bytes shadow space for callee
 
-    ; Align stack pointer to modulo 16 BEFORE pushing return address
-    mov     rbx, rsp             
-    sub     rbx, r12
-    and     rbx, 0xF             ; Check alignment mask
-    jz      .aligned_ok
-    add     r12, 8               ; Add 8 bytes padding if needed to align
+    ; Setup 4 first args
+    mov rax, [r13 + STACK_CONFIG.pArgs]
+    mov rcx, [rax + 0x00]           ; arg0
+    mov rdx, [rax + 0x08]           ; arg1
+    mov r8,  [rax + 0x10]           ; arg2
+    mov r9,  [rax + 0x18]           ; arg3
+
+    ; si more args than 4
+    mov r11, [r13 + STACK_CONFIG.dwNumberOfArgs]
+    sub r11, 4                      
+    jle .setup_rbx                  
+
+    lea r12, [r11 * 8]
+    sub rsp, r12                    ; Save space for ABI call convention Shadow (0x20) + args
+
+.stack_args_loop:
+    dec r11
+    mov r15, [rax + 0x20 + r11 * 8]
+    mov [rsp + r11 * 8], r15
+    test r11, r11
+    jnz .stack_args_loop
+
+.setup_rbx:
+    ; Setup rbx -> gadget_target -> gadget_fallback
+    lea rax, [gadget_fallback]
+    mov [rel gadget_target], rax
+    lea rbx, [rel gadget_target]
+
+    mov r10, rsp
+    and r10, 0xF
+    cmp r10, 8
+    je .aligned_ok
+    sub rsp, 8                      ; Force rsp%16 == 8
 .aligned_ok:
-    sub     rsp, r12             ; Reserve stack space (stack args + shadow + padding)
 
-    lea     r11, [r11 * 8]       ; r11 = byte size of stack args region
-    xor     r12, r12             ; r12 = 0 (offset index for copying)
+    mov rax, [r13 + STACK_CONFIG.pTarget]
+    jmp rax
 
-.args_loop:
-    test    r11, r11
-    jz      .no_stack_args
-    sub     r11, 8
-    mov     r15, [rax + 0x20 + r11]    ; load next stack argument from pArgs (offset 0x20 is arg5 start)
-    mov     [rsp + 0x20 + r12], r15    ; store it into allocated stack space (after 0x20 shadow)
-    add     r12, 8
-    jmp     .args_loop
-
-.no_stack_args:
-    mov     r13, r10                ; Preserve STACK_CONFIG pointer in R13 (non-volatile) for later use
-
-    lea     rax, [gadget_fallback]
-    mov     [rel gadget_addr], rax
-    lea     rbx, [rel gadget_addr]  ; RBX pointe vers cette variable
-
-
-    mov     rax, [r10 + STACK_CONFIG.pTarget]
-    jmp     rax                 ; the jump to the pTarger with built stack frame simulating a normal Call with the jump
-                                ; Target will return to the gadget (jmp [rbx]), which will jump to gadget_fallback.
-
-
+; MessageBoxA ret -> gadget FF23 (jmp [rbx]) -> Here
 gadget_fallback:
-    mov     rsp, [r13 + STACK_CONFIG.pRsp]   ; Restore original RSP value (saved before stack allocation)
-    pop     r15
-    pop     r12
-    pop     r13
-    pop     rbx
-    pop     rdi
-    pop     r14                        ; Restore original R14 (that was pushed as rax in first place)
-    
-    ret                                 ; Jump to the real return address (resume execution in caller)
+    mov rsp, [rel saved_rsp]        ; Restore RSP
+    pop r15
+    pop r12
+    pop r13
+    pop rbx
+    pop rdi
+    pop r14
+
+    jmp [rel saved_ret]             ; not using ret to keep the flow hidden from RtlVitualUnwind

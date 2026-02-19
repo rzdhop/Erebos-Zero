@@ -63,19 +63,19 @@ typedef struct _UNWIND_INFO {
 
 
 typedef struct _STACK_CONFIG {
-    PVOID pRsp; //PTR to a placeholder of RSP (Easier for me in asm)
-    PVOID pSpoofed1_ret; 
-    DWORD Spoofed1StackSize;
-    PVOID pSpoofed2_ret;
-    DWORD Spoofed2StackSize;
-    PVOID pRopGadget; //PTR to Gadget
-    DWORD SpoofedGagdetSize;
-    PVOID pTarget; //PTR to function (MessageBoxA or anyhing)
-    PVOID pArgs; //PTR to the args of the functions
-    DWORD dwNumberOfArgs; //Nb of ars of the function
+    PVOID  pRsp; //PTR to a placeholder of RSP (Easier for me in asm)
+    PVOID  pSpoofed1_ret; 
+    UINT64 Spoofed1StackSize;
+    PVOID  pSpoofed2_ret;
+    UINT64 Spoofed2StackSize;
+    PVOID  pRopGadget; //PTR to Gadget
+    UINT64 SpoofedGagdetSize;
+    PVOID  pTarget; //PTR to function (MessageBoxA or anyhing)
+    PVOID  pArgs; //PTR to the args of the functions
+    UINT64 dwNumberOfArgs; //Nb of ars of the function
 } STACK_CONFIG, *PSTACK_CONFIG;
 
-extern PVOID SpoofCall(PSTACK_CONFIG pConfig);
+extern PVOID SpoofCall(PSTACK_CONFIG stackConfig);
 
 PVOID FindROPGadget(HMODULE hModule ) {
     // Gadget: FF 23 -> jmp QWORD PTR [rbx]
@@ -209,15 +209,15 @@ int CallStackSpoof(PVOID pTarget, DWORD dwNumberOfArgs, ...){
     pGadget = FindROPGadget(pKernel32);
 
     stackConfig->pRopGadget             = pGadget;
-    stackConfig->pSpoofed1_ret          = (PVOID)((UINT64)pRtlUserThreadStart + 0x7);   //Getting a random point in the function to fake the ret of the spoofed frame
+    stackConfig->pSpoofed1_ret          = (PVOID)((UINT64)pRtlUserThreadStart + 0x31);   //Getting a random point in the function to fake the ret of the spoofed frame
     stackConfig->Spoofed1StackSize      = getStackFrameSize(pRtlUserThreadStart, pNtdll);
-    stackConfig->pSpoofed2_ret          = (PVOID)((UINT64)pBaseThreadInitThunk + 0x11); //Same random point
+    stackConfig->pSpoofed2_ret          = (PVOID)((UINT64)pBaseThreadInitThunk + 0x20); //Same random point
     stackConfig->Spoofed2StackSize      = getStackFrameSize(pBaseThreadInitThunk, pKernel32);
     stackConfig->SpoofedGagdetSize      = getStackFrameSize(pGadget, pKernel32);
 
     stackConfig->dwNumberOfArgs         = (dwNumberOfArgs > 4) ? dwNumberOfArgs : 4;
     stackConfig->pTarget = pTarget;
-    printf("[*] pConfig->pTarget set to 0x%p\n", stackConfig->pTarget);
+    printf("[*] stackConfig->pTarget set to 0x%p\n", stackConfig->pTarget);
 
     stackConfig->pArgs = malloc(8 * stackConfig->dwNumberOfArgs); //allocate 8 bytes time number of args
     printf("[*] Allocating %d bytes for %d args\n", (8 * stackConfig->dwNumberOfArgs), stackConfig->dwNumberOfArgs);
@@ -229,8 +229,16 @@ int CallStackSpoof(PVOID pTarget, DWORD dwNumberOfArgs, ...){
         ((PUINT64)stackConfig->pArgs)[i] = va_arg(additionalArgs, UINT64);
         printf("[*] Populating stackConfig->pArgs[%d]\n", i);
     }
+    va_end(additionalArgs);
 
     printf("[*] Performing the call spoofed !\n");
+    printf("\noffsetof pRsp=%zu pS1ret=%zu S1sz=%zu pS2ret=%zu S2sz=%zu gadget=%zu gadgetsz=%zu pTarget=%zu pArgs=%zu nArgs=%zu\n",
+    offsetof(STACK_CONFIG,pRsp), offsetof(STACK_CONFIG,pSpoofed1_ret),
+    offsetof(STACK_CONFIG,Spoofed1StackSize), offsetof(STACK_CONFIG,pSpoofed2_ret),
+    offsetof(STACK_CONFIG,Spoofed2StackSize), offsetof(STACK_CONFIG,pRopGadget),
+    offsetof(STACK_CONFIG,SpoofedGagdetSize), offsetof(STACK_CONFIG,pTarget),
+    offsetof(STACK_CONFIG,pArgs), offsetof(STACK_CONFIG,dwNumberOfArgs));
+    
     SpoofCall(stackConfig);
 
     free(stackConfig->pArgs);
