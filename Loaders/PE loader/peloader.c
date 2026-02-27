@@ -3,27 +3,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-/*
-1) Charger le PE en mémoire 
-2) Allouer la taille de : optionalHeader.SizeOfImage
-3) Mapper chaque sections selon : 
-    PointerToRawData  -> offset dans fichier
-    VirtualAddress    -> offset dans mémoire
-    SizeOfRawData
-    VirtualSize
-4) Appliquer les relocs : 
-    si     :  allocated_base != OptionalHeader.ImageBase
-    then   :  delta = allocated_base - ImageBase
-5) Resolve Imports | section .idata contient IMAGE_IMPORT_DESCRIPTOR
-   For DLL        : LoadLibraryA("kernel32.dll")
-   For functions  : GetProcAddress(...)
-6) Patch IAT
-7) Start EntryPoint : 
-    Entry = base + OptionalHeader.AddressOfEntryPoint;
-    ((void(*)())Entry)();
-
-*/
-
 typedef struct BASE_RELOCATION_BLOCK {
 	DWORD PageAddress;
 	DWORD BlockSize;
@@ -33,6 +12,10 @@ typedef struct BASE_RELOCATION_ENTRY {
 	USHORT Offset : 12;
 	USHORT Type : 4;
 } BASE_RELOCATION_ENTRY, *PBASE_RELOCATION_ENTRY;
+
+int WINAPI MyMessageBox(HWND hWnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType) {
+    return MessageBoxA(NULL, "Completely hijacked !", "Am i loaded ?", MB_ICONHAND);
+}
 
 PBYTE LoadPE(PBYTE pe_base) {
     PBYTE pe_loaded_base;
@@ -44,7 +27,7 @@ PBYTE LoadPE(PBYTE pe_base) {
     PIMAGE_NT_HEADERS ntHdr = (PIMAGE_NT_HEADERS)(pe_base + dosHdr->e_lfanew);
     size_t image_sz = ntHdr->OptionalHeader.SizeOfImage;
     
-    pe_loaded_base = malloc(image_sz);
+    pe_loaded_base = VirtualAlloc(NULL, image_sz, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
     memset(pe_loaded_base, 0, image_sz);
     printf("[*] Allocating Image size (%zu bytes) at 0x%p\n", image_sz, pe_loaded_base);
     
@@ -98,27 +81,102 @@ PBYTE LoadPE(PBYTE pe_base) {
 
     }
 
-    printf("[*] Getting IAT \n");
+    printf("[*] Patching IAT on .idata section \n");
     IMAGE_DATA_DIRECTORY importDir = ntHdr->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-    PIMAGE_IMPORT_DESCRIPTOR importDesc = (PIMAGE_IMPORT_DESCRIPTOR) (pe_loaded_base + importDir.VirtualAddress);
+
+    if(importDir.Size) {
+        PIMAGE_IMPORT_DESCRIPTOR importDesc = (PIMAGE_IMPORT_DESCRIPTOR) (pe_loaded_base + importDir.VirtualAddress);
+
+        FARPROC func = NULL;
+        while(importDesc->Name) {
+            char* dllName = (char*)(pe_loaded_base + importDesc->Name);
+
+            HMODULE hDll = LoadLibraryA(dllName);
+
+            //INT function names
+            PIMAGE_THUNK_DATA origThunk = (PIMAGE_THUNK_DATA)(pe_loaded_base +(importDesc->OriginalFirstThunk ? importDesc->OriginalFirstThunk : importDesc->FirstThunk)); 
+            //IAT function addresses
+            PIMAGE_THUNK_DATA firstThunk = (PIMAGE_THUNK_DATA)(pe_loaded_base + importDesc->FirstThunk);
+
+            while(origThunk->u1.AddressOfData)
+            {
+                //Guess if image is imported by Name or ordinal(kind of ID)
+                if (IMAGE_SNAP_BY_ORDINAL(origThunk->u1.Ordinal))
+                {
+                    func = GetProcAddress(hDll, (LPCSTR)IMAGE_ORDINAL(origThunk->u1.Ordinal));
+                }
+                else
+                {
+                    PIMAGE_IMPORT_BY_NAME import = (PIMAGE_IMPORT_BY_NAME)(pe_loaded_base + origThunk->u1.AddressOfData);
+                    if (stricmp("MessageBoxA", import->Name) == 0){
+                        func = (FARPROC)&MyMessageBox;
+                    } else func = GetProcAddress(hDll, import->Name);
+                }
+                //appliyng the func addr into IAT
+                firstThunk->u1.Function = (ULONG_PTR)func;
+
+                origThunk++;
+                firstThunk++;
+            }
+            importDesc++;
+        }
+    }
+
+    printf("[*] Applying section's memory protections\n");
+    section = IMAGE_FIRST_SECTION(ntHdr);
+
+    for (int i = 0; i < ntHdr->FileHeader.NumberOfSections; i++, section++) {
+        DWORD protect = PAGE_NOACCESS;
+        DWORD oldProtect;
+
+        BOOL executable = section->Characteristics & IMAGE_SCN_MEM_EXECUTE;
+        BOOL readable = section->Characteristics & IMAGE_SCN_MEM_READ;
+        BOOL writable = section->Characteristics & IMAGE_SCN_MEM_WRITE;
+
+        if (executable)
+            protect = writable ? PAGE_EXECUTE_READWRITE : PAGE_EXECUTE_READ;
+        else
+            protect = writable ? PAGE_READWRITE : PAGE_READONLY;
+
+        VirtualProtect(pe_loaded_base + section->VirtualAddress, section->Misc.VirtualSize, protect, &oldProtect);
+    }
+
+    printf("[*] Calling TLS Callbacks\n");
+    IMAGE_DATA_DIRECTORY tlsDir = ntHdr->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS];
+
+    if (tlsDir.Size)
+    {
+        PIMAGE_TLS_DIRECTORY tls = (PIMAGE_TLS_DIRECTORY) (pe_loaded_base + tlsDir.VirtualAddress);
+        PIMAGE_TLS_CALLBACK* callbacks = (PIMAGE_TLS_CALLBACK*)tls->AddressOfCallBacks;
+        
+        while (callbacks && *callbacks)
+        {
+            (*callbacks)(pe_loaded_base, DLL_PROCESS_ATTACH,NULL);
+
+            callbacks++;
+        }
+    }
+    printf("[*] Creating the loaded process thread\n");
+    HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)(pe_loaded_base + ntHdr->OptionalHeader.AddressOfEntryPoint), NULL, 0, NULL);
+    WaitForSingleObject(hThread, INFINITE);
 
     return pe_loaded_base;
 }
 
-
 int main(int argc, char ** argv) {
-    LPCSTR pe_path = TEXT(".\random_pe.exe");
+    LPCSTR pe_path = "random_pe.exe";
     FILE *fp = fopen(pe_path, "rb");
 
     fseek(fp, 0, SEEK_END);
     size_t file_size = ftell(fp);
     rewind(fp);
 
-    // Read entire file
     PBYTE fileBuffer = malloc(file_size);
     fread(fileBuffer, 1, file_size, fp);
     fclose(fp);
 
+    printf("[*] Loading PE file (%zu bytes)\n", file_size);
     PBYTE loaded_pe = LoadPE(fileBuffer);
+    
     return 0;
 }
