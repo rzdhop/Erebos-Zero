@@ -25,6 +25,8 @@ typedef struct _IMPLANT_PACKET {
     BYTE Data[1024];
 } IMPLANT_PACKET, *PIMPLANT_PACKET;
 
+
+
 void XOR(PUCHAR data, size_t data_sz, PUCHAR key, size_t key_sz);
 void hexdump(char *data, size_t size);
 DWORD Djb2W(BYTE* data);
