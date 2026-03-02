@@ -1,4 +1,4 @@
-# Erebos C2 (Level 1)
+# Erebos C2 (Version 1)
 
 **Erebos C2** is an educational Command & Control (C2) framework designed to demonstrate advanced Windows process manipulation, argument spoofing, and shellcode injection techniques.
 It combines all the techniques featured in the Erebos-Zero Project.
@@ -6,7 +6,7 @@ It combines all the techniques featured in the Erebos-Zero Project.
 # Disclaimer
 This project is for educational purposes and authorized security research only. Using this tool on systems without prior explicit permission is illegal.
 
-## Level 1 Features
+## Version 1 Features
 * **Multi-Session Management**: A Python-based server handles multiple simultaneous implant connections using a threaded CLI.
 * **Process Argument Spoofing**: Executes PowerShell commands hidden behind legitimate process names using a "RickRoll" decoy buffer to mask real command lines.
 * **EarlyBird Injection**: Injects shellcode into a suspended process and executes it via Early Bird;  Asynchronous Procedure Call (APC) queuing.
