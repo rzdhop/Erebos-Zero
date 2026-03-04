@@ -12,41 +12,51 @@ Grosso-modo, pour le moment voici les techniques implémentés :
 ```
 /loaders
 ├── shellcode
-│ ├── EarlyBird APC injection (Suspended/Debug)
-│ └── Process injector (4 levels)
-│ ├── Custom GetProcAddress
-│ ├── Constantes XORed
-│ ├── Indirect syscall
-│ ├── Basic Anti-VM
-│ └── Basic Anti-Debug
+│   ├── EarlyBird APC injection : Thread queuing before execution
+│   └── Process injector (4 levels) : Escalating evasion complexity levels
+│       ├── Custom GetProcAddress : Manual EAT/PEB parsing
+│       ├── Constantes XORed : String and data obfuscation
+│       ├── Indirect syscall : Using legitimate ntdll gadgets
+│       ├── Basic Anti-VM : Environment and CPUID checks
+│       └── Basic Anti-Debug : PEB and flag monitoring
 │
 ├── dll
-│ ├── Basic DLL injection
-│ └── shellcode Reflective DLL injection (sRDI)
+│   ├── Basic DLL injection : Standard remote thread loading
+│   └── shellcode Reflective DLL injection (sRDI) : Converting DLLs to PIC
 │
-├── Function stomping injection
-├── Mapping injection
-└── Thread hijacking
+├── Function stomping injection : Overwriting legitimate function bodies
+├── Mapping injection : Shared sections, no WPM
+└── Thread hijacking : Redirecting RIP/EIP contexts
 
 /misc
-├── PPID Spoofing
-└── Process Argument Spoofing (ProcMon + System informer/Process Hacker bypass)
+├── PPID Spoofing : Breaking process tree analysis
+├── Process Argument Spoofing : Masking CLI in ProcMon
+├── IAT Hiding : Hashing imports via DJB2
+└── Registry Stager : Fileless shellcode storage
 
 /bypass
 ├── EDR
-│ ├── Direct syscall
-│ ├── Indirect syscall
-│ ├── Halo's Gate
-│ ├── Hell's Gate
-│ └── Dynamic SSN retrieval
+│   ├── Direct syscall : Manual SSN transition
+│   ├── Indirect syscall : Stealthy return address
+│   ├── Halo's Gate : Unhooked neighbor SSN recovery
+│   ├── Hell's Gate : Dynamic EAT SSN extraction
+│   ├── Dynamic SSN retrieval : Sorting Zw* functions
+│   └── VEH AMSI Bypass : Hardware breakpoint interception
 │
 └── KASLR
-  ├── Cache Prefetch side-channel
-  └── NtQuerySystemInformation
+├── Cache Prefetch side-channel : Timing attack on kernel
+└── NtQuerySystemInformation : System module leak
+
+/C2
+├── V.1 (Legacy) : Basic modular beaconing
+└── V.2 (Advanced) : High-stealth orchestration
+├── StealthCall : Unified stack/syscall engine
+├── Call Stack Spoofing : Synthetic frame reconstruction
+└── PE Loader : Memory-resident EXE execution
 
 /stagers
 └── Web Stagers
-  └── basic HTTP stager
+└── basic HTTP stager : WinHttp payload fetching
 
 ```
 
