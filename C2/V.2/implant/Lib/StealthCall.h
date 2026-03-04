@@ -3,13 +3,15 @@
 #include "..\helper.h"
 
 typedef enum _UNWIND_OP_CODES {
-	UWOP_PUSH_NONVOL,
-	UWOP_ALLOC_LARGE,
-	UWOP_ALLOC_SMALL,
-	UWOP_SET_FPREG,
-	UWOP_SAVE_NONVOL,
-	UWOP_SAVE_NONVOL_FAR,
-	UWOP_PUSH_MACHFRAME = 10
+    UWOP_PUSH_NONVOL = 0,    /* info == register number */
+    UWOP_ALLOC_LARGE = 1,    /* info == 0 or 1, slots == 2 or 3 */
+    UWOP_ALLOC_SMALL = 2,    /* info == size/8 - 1 */
+    UWOP_SET_FPREG = 3,      /* info == 0 */
+    UWOP_SAVE_NONVOL = 4,    /* info == register number, slot == 1 */
+    UWOP_SAVE_NONVOL_FAR = 5, /* info == register number, slots == 2 */
+    UWOP_SAVE_XMM128 = 8,    /* info == XMM reg number, slot == 1 */
+    UWOP_SAVE_XMM128_FAR = 9, /* info == XMM reg number, slots == 2 */
+    UWOP_PUSH_MACHFRAME = 10  /* info == 0 or 1 */
 } UNWIND_OP_CODES;
 
 typedef UCHAR UBYTE;
@@ -46,3 +48,12 @@ typedef struct _STACK_CONFIG {
     ULONG64 dwNumberOfArgs;
     ULONG64 ssn;               // Syscall SSN
 } STACK_CONFIG, *PSTACK_CONFIG;
+
+extern PVOID SpoofCall(PSTACK_CONFIG stackConfig);
+
+int StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...);
+DWORD getInDirectSyscallStub(HMODULE hNTDLL, const char* NtFunctionName, DWORD *funcSSN, PVOID *ppTarget);
+DWORD dynamicSSN_retreive(BYTE* NtFunctionAddr);
+LPVOID Halo_gate(HMODULE hNtdll);
+DWORD getStackFrameSize(PVOID funcPTR, HMODULE modulePTR);
+PVOID FindJMPGadget(HMODULE hModule);

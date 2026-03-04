@@ -274,7 +274,7 @@ BOOL CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, LPC
     }
 
     // Résolution NtQuery
-    _NtQueryInformationProcess pNtQueryInformationProcess = (_NtQueryInformationProcess)CustomGetProcAddress(CustomGetModuleHandleA("ntdll.dll"), "NtQueryInformationProcess");
+    _NtQueryInformationProcess pNtQueryInformationProcess = (_NtQueryInformationProcess)CustomGetProcAddress(CustomGetModuleHandleW(L"ntdll.dll"), "NtQueryInformationProcess");
     
     PROCESS_BASIC_INFORMATION PBI = { 0 };
     ULONG ret = 0;

@@ -209,7 +209,7 @@ DWORD dynamicSSN_retreive(BYTE* NtFunctionAddr) {
 DWORD getInDirectSyscallStub(HMODULE hNTDLL, const char* NtFunctionName, DWORD *funcSSN, PVOID *ppTarget){
     DWORD SSN = 0;
     LPVOID stub = NULL;
-    BYTE* NtFunctionAddr = (BYTE*)MyGetProcAddress(hNTDLL, NtFunctionName);
+    BYTE* NtFunctionAddr = (BYTE*)CustomGetProcAddress(hNTDLL, NtFunctionName);
 
     if (!NtFunctionAddr) return SSN;
     //Case si on a le SSN mais pas le syscall
@@ -253,15 +253,15 @@ int StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...){
     PVOID pGadget, pRtlUserThreadStart, pBaseThreadInitThunk;
 	HMODULE pNtdll, pKernel32;
 
-	pNtdll = CustomGetModuleHandleW(TEXT("ntdll"));
-	pKernel32 = CustomGetModuleHandleW(TEXT("kernel32"));
+	pNtdll = CustomGetModuleHandleW(L"ntdll");
+	pKernel32 = CustomGetModuleHandleW(L"kernel32");
 
 	pRtlUserThreadStart = CustomGetProcAddress(pNtdll, "RtlUserThreadStart");
 	pBaseThreadInitThunk = CustomGetProcAddress(pKernel32, "BaseThreadInitThunk");
 
     printf("[*] Got RtlUserThreadStart from ntdll.dll @ 0x%p\n", pRtlUserThreadStart);
     printf("[*] Got BaseThreadInitThunk from kernel32.dll @ 0x%p\n", pBaseThreadInitThunk);
-    pGadget = FindROPGadget(pKernel32);
+    pGadget = FindJMPGadget(pKernel32);
 
     stackConfig->pRopGadget             = pGadget;
     stackConfig->pSpoofed1_ret          = (PVOID)((UINT64)pRtlUserThreadStart + 0x31);   //Getting a random point in the function to fake the ret of the spoofed frame
