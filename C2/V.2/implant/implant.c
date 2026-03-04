@@ -4,7 +4,7 @@
 #include "Attacks/ExecuteShellcode.h"
 #include "Attacks/ExecutePELoader.h"
 
-#include "Lib/lib.h"
+#include "Lib/StealthCall.h"
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "wininet.lib")
