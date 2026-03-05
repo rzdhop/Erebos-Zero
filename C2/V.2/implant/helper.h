@@ -15,6 +15,9 @@
 #include <winternl.h>
 #include <windows.h>
 
+#include "Lib/StealthCall.h"
+#include "Lib/Wrappers.h"
+
 #define DEFAULT_SPOOFED_PROC "C:\\Windows\\System32\\notepad.exe"
 #define HOST "127.0.0.1"
 #define PORT 8888

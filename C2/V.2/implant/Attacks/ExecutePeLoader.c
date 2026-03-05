@@ -65,7 +65,7 @@ VOID ExecutePELoader(PBYTE pe_base) {
     PIMAGE_NT_HEADERS ntHdr = (PIMAGE_NT_HEADERS)(pe_base + dosHdr->e_lfanew);
     size_t image_sz = ntHdr->OptionalHeader.SizeOfImage;
     
-    pe_loaded_base = VirtualAlloc(NULL, image_sz, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+    pe_loaded_base = WrapperVirtualAlloc(NULL, image_sz, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
     memset(pe_loaded_base, 0, image_sz);
     printf("[*] Allocating Image size (%zu bytes) at 0x%p\n", image_sz, pe_loaded_base);
     
@@ -147,10 +147,47 @@ VOID ExecutePELoader(PBYTE pe_base) {
                 {
                     PIMAGE_IMPORT_BY_NAME import = (PIMAGE_IMPORT_BY_NAME)(pe_loaded_base + origThunk->u1.AddressOfData);
 
+
                     if (stricmp("MessageBoxA", import->Name) == 0)
                         func = (FARPROC)&MyMessageBox;
                     else if (stricmp("ExitProcess", import->Name) == 0) {
                         func = (FARPROC)&MyExitProcess; 
+                    }
+                    else if (stricmp("VirtualAlloc", import->Name) == 0) {
+                        func = (FARPROC)&WrapperVirtualAlloc;
+                    }
+                    else if (stricmp("VirtualAllocEx", import->Name) == 0) {
+                        func = (FARPROC)&WrapperVirtualAllocEx;
+                    }
+                    else if (stricmp("VirtualProtect", import->Name) == 0) {
+                        func = (FARPROC)&WrapperVirtualProtect;
+                    }
+                    else if (stricmp("VirtualProtectEx", import->Name) == 0) {
+                        func = (FARPROC)&WrapperVirtualProtectEx;
+                    }
+                    else if (stricmp("CreateThread", import->Name) == 0) {
+                        func = (FARPROC)&WrapperCreateThread;
+                    }
+                    else if (stricmp("CreateRemoteThreadEx", import->Name) == 0) {
+                        func = (FARPROC)&WrapperCreateRemoteThreadEx;
+                    }
+                    else if (stricmp("WriteProcessMemory", import->Name) == 0) {
+                        func = (FARPROC)&WrapperWriteProcessMemory;
+                    }
+                    else if (stricmp("ReadProcessMemory", import->Name) == 0) {
+                        func = (FARPROC)&WrapperReadProcessMemory;
+                    }
+                    else if (stricmp("ResumeThread", import->Name) == 0) {
+                        func = (FARPROC)&WrapperResumeThread;
+                    }
+                    else if (stricmp("QueueUserAPC", import->Name) == 0) {
+                        func = (FARPROC)&WrapperQueueUserAPC;
+                    }
+                    else if (stricmp("OpenProcess", import->Name) == 0) {
+                        func = (FARPROC)&WrapperOpenProcess;
+                    }
+                    else if (stricmp("WaitForSingleObject", import->Name) == 0) {
+                        func = (FARPROC)&WrapperWaitForSingleObject;
                     }
                     else func = GetProcAddress(hDll, import->Name);
 
@@ -202,7 +239,7 @@ VOID ExecutePELoader(PBYTE pe_base) {
         }
     }
     printf("[*] Creating the loaded process thread\n");
-    HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)(pe_loaded_base + ntHdr->OptionalHeader.AddressOfEntryPoint), NULL, 0, NULL);
-    WaitForSingleObject(hThread, INFINITE);
+    HANDLE hThread = WrapperCreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)(pe_loaded_base + ntHdr->OptionalHeader.AddressOfEntryPoint), NULL, 0, NULL);
+    WrapperWaitForSingleObject(hThread, INFINITE);
 
 }

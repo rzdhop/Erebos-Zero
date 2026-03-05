@@ -51,14 +51,20 @@ DWORD getStackFrameSize(PVOID funcPTR, HMODULE modulePTR) {
     printf("[*] Searching in PRUNTIME_FUNCTION entries for function @ 0x%p\n", funcPTR);
 
     PRUNTIME_FUNCTION pRuntimeFunction = (PRUNTIME_FUNCTION)pExceptionDirectory;
+    BOOL bFound = FALSE;
 
     for (int i = 0 ; i < dwRuntimeFunctionCount; i++ ) {
         if (dwFuncOffset >= pRuntimeFunction->BeginAddress && dwFuncOffset <= pRuntimeFunction->EndAddress) {
             printf("[*] Found entry !\n");
+            bFound = TRUE;
 			break;
 		}
 
 		pRuntimeFunction++;
+    }
+    if (!bFound) {
+        printf("[*] Unwind data not found for 0x%p. Defaulting frame size to 0x20.\n", funcPTR);
+        return 0x20; // Taille standard (Shadow Space)
     }
 
     //pUnwindInfo = ((PUNWIND_INFO)(modulePTR + pRuntimeFunction->UnwindInfoAddress));
@@ -169,7 +175,7 @@ DWORD dynamicSSN_retreive(BYTE* NtFunctionAddr) {
 
     if (!NtFunctionAddr) return 0;
 
-    // Sécuriser les bornes de lecture (resterdans la même région mémoire)
+    // Sécuriser les bornes de lecture (rester dans la même région mémoire)
     MEMORY_BASIC_INFORMATION mbi;
     if (!VirtualQuery(NtFunctionAddr, &mbi, sizeof(mbi))) return 0;
     BYTE* regionBase = (BYTE*)mbi.BaseAddress;
@@ -244,7 +250,7 @@ DWORD getInDirectSyscallStub(HMODULE hNTDLL, const char* NtFunctionName, DWORD *
     return SSN;
 }
 
-int StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...){
+ULONG StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...){
     va_list additionalArgs;
 
     PSTACK_CONFIG stackConfig = malloc(sizeof(STACK_CONFIG));
@@ -282,16 +288,17 @@ int StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...){
     //Say that there is more argument to our function w/ DWORD dwNumberOfArgs
     va_start(additionalArgs, dwNumberOfArgs); //make additianlArgs point to the stack after DWORD dwNumberOfArgs and can be pop
     for (int i = 0; i < dwNumberOfArgs; i++){
-        ((PUINT64)stackConfig->pArgs)[i] = va_arg(additionalArgs, UINT64);
-        printf("[*] Populating stackConfig->pArgs[%d]\n", i);
+        UINT64 argValue = va_arg(additionalArgs, UINT64);
+        ((PUINT64)stackConfig->pArgs)[i] = argValue;
+        printf("\t[Arg %d] Value: 0x%016llX\n", i, (unsigned long long)argValue);
     }
     va_end(additionalArgs);
 
     printf("[*] Performing the call spoofed !\n");    
-    SpoofCall(stackConfig);
+    ULONG status = (ULONG)(ULONG_PTR)SpoofCall(stackConfig);
 
     free(stackConfig->pArgs);
     free(stackConfig);
-    return 0;
+    return status;
     
 }

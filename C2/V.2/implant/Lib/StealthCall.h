@@ -51,7 +51,7 @@ typedef struct _STACK_CONFIG {
 
 extern PVOID SpoofCall(PSTACK_CONFIG stackConfig);
 
-int StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...);
+ULONG StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...);
 DWORD getInDirectSyscallStub(HMODULE hNTDLL, const char* NtFunctionName, DWORD *funcSSN, PVOID *ppTarget);
 DWORD dynamicSSN_retreive(BYTE* NtFunctionAddr);
 LPVOID Halo_gate(HMODULE hNtdll);
