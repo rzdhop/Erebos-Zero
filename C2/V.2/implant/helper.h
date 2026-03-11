@@ -45,6 +45,8 @@ extern UCHAR __NtQueryInformationProcess[];
 extern UCHAR _NtReadVirtualMemory[];
 extern UCHAR _NtCreateThreadEx[];
 extern UCHAR _NtOpenProcess[];
+extern UCHAR _NtCreateEvent[];
+extern UCHAR _NtCreateTimer[];
 extern UCHAR key[];
 
 void XOR(PUCHAR data, size_t data_sz, PUCHAR key, size_t key_sz);

@@ -20,7 +20,9 @@ API_NAMES = [
     "_NtQueryInformationProcess",
     "NtReadVirtualMemory",
     "NtCreateThreadEx",
-    "NtOpenProcess"
+    "NtOpenProcess", 
+    "NtCreateEvent", 
+    "NtCreateTimer"
 ]
 
 key = b"rzdhop_is_a_nice_guy"

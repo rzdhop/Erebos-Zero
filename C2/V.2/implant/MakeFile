@@ -8,7 +8,7 @@ SIGN_SCRIPT = .\Scripts\Sign_implant.py
 # /MT  : Lie statiquement la CRT (évite de dépendre de VCRUNTIME140.dll)
 CFLAGS  = /nologo /O2 /MT /GS- /I. /I.\Lib /I.\Attacks
 ASFLAGS = -f win64
-LIBS    = wininet.lib ws2_32.lib user32.lib
+LIBS    = wininet.lib ws2_32.lib user32.lib advapi32.lib ntdll.lib
 
 ASM_OBJ = .\Lib\StealthCall.o
 TARGET  = implant.exe

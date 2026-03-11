@@ -25,3 +25,5 @@ BOOL WrapperResumeThread(HANDLE hThread);
 HANDLE WrapperOpenProcess(DWORD dwPid);
 BOOL WrapperWaitForSingleObject(HANDLE hHandle, DWORD dwMilliseconds);
 
+HANDLE WrapperCreateEventW(LPSECURITY_ATTRIBUTES lpEventAttributes, BOOL bManualReset, BOOL bInitialState, LPCWSTR lpName);
+HANDLE WrapperCreateTimerQueue();
