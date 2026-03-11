@@ -10,9 +10,6 @@ typedef struct {
 
 typedef NTSTATUS(NTAPI* _SystemFunction032)(USTRING* data, USTRING* key);
 
-// Global/Static to ensure address remains valid across thread contexts
-static DWORD OldProtect = 0;
-
 void TargetFunction() {
     printf("[+] TargetFunction executed successfully!\n");
     MessageBoxA(NULL, "Exec After unXOR!", "Ekko POC", MB_OK | MB_ICONINFORMATION);
@@ -26,6 +23,7 @@ int main() {
             RopMemDec = { 0 }, 
             RopProtRX = { 0 }, 
             RopSetEvt = { 0 };
+    DWORD OldProtect = 0;
 
     HANDLE hTimerQueue = CreateTimerQueue();
     HANDLE hEvent = CreateEventW(NULL, FALSE, FALSE, NULL);
@@ -141,5 +139,6 @@ int main() {
 
     TargetFunction();
 
+    DeleteTimerQueue(hTimerQueue);
     return 0;
 }
