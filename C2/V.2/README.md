@@ -1,4 +1,4 @@
-# Erebos C2 (Version 1)
+# Erebos C2 (Version 2)
 
 **Erebos C2** is an educational Command & Control (C2) framework designed to demonstrate advanced Windows process manipulation, argument spoofing, and shellcode injection techniques.
 It combines all the techniques featured in the Erebos-Zero Project.
