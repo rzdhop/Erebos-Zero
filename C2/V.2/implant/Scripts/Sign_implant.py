@@ -4,7 +4,7 @@ import datetime
 
 # Configuration
 TARGET_EXE = r"implant.exe"
-CERT_NAME = "EreboxCorp"
+CERT_NAME = "ErebosCorp"
 PFX_FILE = "erebos_cert.pfx"
 PFX_PASS = "rzdhop_is_a_nice_guy"
 
@@ -16,6 +16,7 @@ def run_cmd(cmd):
 
 def generate_and_sign():
     print(f"[*] Generating CA for: {CERT_NAME}")
+    os.environ["OPENSSL_CONF"] = r"C:\Program Files\Git\usr\ssl\openssl.cnf"
     
     # 1. Create Private Key & Self-Signed Cert (OpenSSL)
     openssl_cmd = (

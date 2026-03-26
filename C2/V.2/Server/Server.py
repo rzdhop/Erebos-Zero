@@ -35,6 +35,7 @@ class C2:
 
     def startC2(self):
         self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server_sock.bind((self.host, self.port))
         self.server_sock.listen(50)
         self.server_sock.setblocking(False)

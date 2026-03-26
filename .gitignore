@@ -5,3 +5,4 @@
 /Bypasses/EDR/Stack-Spoof/Better with msvc
 *.gch
 *.pfx
+*.obj
