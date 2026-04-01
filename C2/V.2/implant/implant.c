@@ -6,6 +6,8 @@
 
 #include "Lib/StealthCall.h"
 #include "Lib/SleepMasking.h"
+#include "Lib/Wrappers.h"
+#include "Lib/AMSIBypass.h"
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "wininet.lib")

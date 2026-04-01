@@ -13,7 +13,7 @@ VOID ExecPowerShell(LPCWSTR psCommand) {
 
     PROCESS_INFORMATION Pi = { 0 };
     HANDLE g_hChildStd_OUT_Rd = CreateSpoofedProcess(DEFAULT_SPOOFED_PROC, &Pi, wrappedPsCmd);
-
+    Sleep(1);
     ResumeThread(Pi.hThread);
     Sleep(2);
 

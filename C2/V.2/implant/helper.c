@@ -416,6 +416,9 @@ HANDLE CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, L
     WriteToTargetProcess(Pi->hProcess, remoteParamsBase + offsetof(RTL_USER_PROCESS_PARAMETERS, CommandLine.MaximumLength), &effectiveArgs_sz_us, sizeof(USHORT));
 
     printf("[*] Process manipulation done !\n");
+
+    //printf("[*] Applying VEH AMSI Bypass...\n");
+    //ApplyVehAmsiBypass(Pi->hProcess, Pi->hThread);
     
 
 cleanup:
