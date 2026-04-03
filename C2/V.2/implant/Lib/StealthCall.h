@@ -36,17 +36,19 @@ typedef struct _UNWIND_INFO {
 	UNWIND_CODE UnwindCode[1];
 } UNWIND_INFO, * PUNWIND_INFO;
 
+// Struct update: use UINT64 to prevent C/ASM alignment padding issues
 typedef struct _STACK_CONFIG {
-    PVOID pSpoofed1_ret;
-    ULONG64 Spoofed1StackSize;
-    PVOID pSpoofed2_ret;
-    ULONG64 Spoofed2StackSize;
-    PVOID pRopGadget;
-    ULONG64 SpoofedGadgetSize;
-    PVOID pTarget;             // The Syscall addr
-    PVOID pArgs;
-    ULONG64 dwNumberOfArgs;
-    ULONG64 ssn;               // Syscall SSN
+    UINT64 pSpoofed1_ret;
+    UINT64 Spoofed1StackSize;
+    UINT64 pSpoofed2_ret;
+    UINT64 Spoofed2StackSize;
+    UINT64 pJmpRbxGadget;      // Keep this to bounce back after the AddRsp Gadget
+    UINT64 pAddRspRetGadget;   // Primary target return address
+    UINT64 AddRspSize;         // The 'X' value
+    UINT64 pTarget;
+    UINT64 pArgs;
+    UINT64 dwNumberOfArgs;
+    UINT64 ssn;
 } STACK_CONFIG, *PSTACK_CONFIG;
 
 extern PVOID SpoofCall(PSTACK_CONFIG stackConfig);
