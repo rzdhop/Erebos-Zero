@@ -17,7 +17,6 @@
 
 #include "Lib/StealthCall.h"
 #include "Lib/Wrappers.h"
-#include "Lib/AMSIBypass.h"
 
 #define DEFAULT_SPOOFED_PROC "C:\\Windows\\System32\\notepad.exe"
 #define HOST "127.0.0.1"
