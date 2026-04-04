@@ -41,7 +41,9 @@ typedef struct _STACK_CONFIG {
     ULONG64 Spoofed1StackSize;
     PVOID pSpoofed2_ret;
     ULONG64 Spoofed2StackSize;
-    PVOID pRopGadget;
+    PVOID pJmpRbxGadget;
+    PVOID pAddRSPRetGadget;
+    ULONG64 AddRspSize;
     ULONG64 SpoofedGadgetSize;
     PVOID pTarget;             // The Syscall addr
     PVOID pArgs;

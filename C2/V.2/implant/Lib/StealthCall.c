@@ -27,6 +27,40 @@ PVOID FindJMPGadget(HMODULE hModule) {
     return NULL;
 }
 
+PVOID FindAddRspRetGadget(HMODULE hModule, DWORD dwMinRequiredSpace, PDWORD pdwActualGadgetSize) {
+    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)hModule;
+    PIMAGE_NT_HEADERS64 nt = (PIMAGE_NT_HEADERS64)((PBYTE)hModule + dos->e_lfanew);
+
+    DWORD textRva  = nt->OptionalHeader.BaseOfCode;
+    DWORD textSize = nt->OptionalHeader.SizeOfCode;
+
+    PBYTE text = (PBYTE)hModule + textRva;
+
+    if (textSize < 8) return NULL;
+
+    for (DWORD i = 0; i < textSize - 8; i++) {
+        DWORD currentGadgetSize = 0;
+
+        // Pattern 1: add rsp, imm8 ; ret (48 83 C4 <imm8> C3)
+        if (text[i] == 0x48 && text[i+1] == 0x83 && text[i+2] == 0xC4 && text[i+4] == 0xC3) {
+            currentGadgetSize = (DWORD)text[i+3];
+        }
+        // Pattern 2: add rsp, imm32 ; ret (48 81 C4 <imm32> C3)
+        else if (text[i] == 0x48 && text[i+1] == 0x81 && text[i+2] == 0xC4 && text[i+7] == 0xC3) {
+            currentGadgetSize = *(PDWORD)(&text[i+3]);
+        }
+
+        // Validate constraint and alignment
+        if (currentGadgetSize > 0 && currentGadgetSize >= dwMinRequiredSpace && (currentGadgetSize % 8) == 0) {
+            *pdwActualGadgetSize = currentGadgetSize;
+            return (PVOID)(text + i);
+        }
+    }
+
+    return NULL;
+}
+
+
 DWORD getStackFrameSize(PVOID funcPTR, HMODULE modulePTR) {
     UINT64 pExceptionDirectory;
 	DWORD dwRuntimeFunctionCount;
@@ -267,9 +301,17 @@ ULONG StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...){
 
     //printf("[*] Got RtlUserThreadStart from ntdll.dll @ 0x%p\n", pRtlUserThreadStart);
     //printf("[*] Got BaseThreadInitThunk from kernel32.dll @ 0x%p\n", pBaseThreadInitThunk);
-    pGadget = FindJMPGadget(pKernel32);
 
-    stackConfig->pRopGadget             = pGadget;
+
+    // Calculate minimum required stack space: 0x20 (Shadow Space) + 8 bytes per extra argument
+    DWORD dwRequiredStackSpace = 0x20;
+    if (dwNumberOfArgs > 4) {
+        dwRequiredStackSpace += (dwNumberOfArgs - 4) * 8;
+    }
+    DWORD dwActualGadgetSize = 0;
+    stackConfig->pJmpRbxGadget          = FindJMPGadget(pKernel32);
+    stackConfig->pAddRSPRetGadget       = FindAddRspRetGadget(pKernel32, dwRequiredStackSpace, &dwActualGadgetSize);
+    stackConfig->AddRspSize             = (ULONG64)dwActualGadgetSize;
     stackConfig->pSpoofed1_ret          = (PVOID)((UINT64)pRtlUserThreadStart + 0x31);   //Getting a random point in the function to fake the ret of the spoofed frame
     stackConfig->Spoofed1StackSize      = getStackFrameSize(pRtlUserThreadStart, pNtdll);
     stackConfig->pSpoofed2_ret          = (PVOID)((UINT64)pBaseThreadInitThunk + 0x20); //Same random point
@@ -300,5 +342,4 @@ ULONG StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...){
     free(stackConfig->pArgs);
     free(stackConfig);
     return status;
-    
 }
