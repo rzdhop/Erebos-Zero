@@ -287,8 +287,7 @@ DWORD getInDirectSyscallStub(HMODULE hNTDLL, const char* NtFunctionName, DWORD *
 ULONG StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...){
     va_list additionalArgs;
 
-    PSTACK_CONFIG stackConfig = malloc(sizeof(STACK_CONFIG));
-    memset(stackConfig, 0, sizeof(STACK_CONFIG));
+    PSTACK_CONFIG stackConfig = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(STACK_CONFIG));
 
     PVOID pGadget, pRtlUserThreadStart, pBaseThreadInitThunk;
 	HMODULE pNtdll, pKernel32;
@@ -299,8 +298,8 @@ ULONG StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...){
 	pRtlUserThreadStart = CustomGetProcAddress(pNtdll, "RtlUserThreadStart");
 	pBaseThreadInitThunk = CustomGetProcAddress(pKernel32, "BaseThreadInitThunk");
 
-    //printf("[*] Got RtlUserThreadStart from ntdll.dll @ 0x%p\n", pRtlUserThreadStart);
-    //printf("[*] Got BaseThreadInitThunk from kernel32.dll @ 0x%p\n", pBaseThreadInitThunk);
+    printf("[*] Got RtlUserThreadStart from ntdll.dll @ 0x%p\n", pRtlUserThreadStart);
+    printf("[*] Got BaseThreadInitThunk from kernel32.dll @ 0x%p\n", pBaseThreadInitThunk);
 
 
     // Calculate minimum required stack space: 0x20 (Shadow Space) + 8 bytes per extra argument
@@ -316,16 +315,14 @@ ULONG StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...){
     stackConfig->Spoofed1StackSize      = getStackFrameSize(pRtlUserThreadStart, pNtdll);
     stackConfig->pSpoofed2_ret          = (PVOID)((UINT64)pBaseThreadInitThunk + 0x20); //Same random point
     stackConfig->Spoofed2StackSize      = getStackFrameSize(pBaseThreadInitThunk, pKernel32);
-    stackConfig->SpoofedGadgetSize      = getStackFrameSize(pGadget, pKernel32);
     stackConfig->ssn                    = funcSSN;
 
     stackConfig->dwNumberOfArgs         = (dwNumberOfArgs > 4) ? dwNumberOfArgs : 4;
     stackConfig->pTarget = pTarget;
     //printf("[*] stackConfig->pTarget set to 0x%p\n", stackConfig->pTarget);
 
-    stackConfig->pArgs = malloc(8 * stackConfig->dwNumberOfArgs); //allocate 8 bytes time number of args
+    stackConfig->pArgs = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, 8 * stackConfig->dwNumberOfArgs);
     //printf("[*] Allocating %d bytes for %d args\n", (8 * stackConfig->dwNumberOfArgs), stackConfig->dwNumberOfArgs);
-    memset(stackConfig->pArgs, 0, 8 * stackConfig->dwNumberOfArgs);
     
     //Say that there is more argument to our function w/ DWORD dwNumberOfArgs
     va_start(additionalArgs, dwNumberOfArgs); //make additianlArgs point to the stack after DWORD dwNumberOfArgs and can be pop
@@ -339,7 +336,7 @@ ULONG StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...){
     //printf("[*] Performing the call spoofed !\n");    
     ULONG status = (ULONG)(ULONG_PTR)SpoofCall(stackConfig);
 
-    free(stackConfig->pArgs);
-    free(stackConfig);
+    HeapFree(GetProcessHeap(), 0, stackConfig->pArgs);
+    HeapFree(GetProcessHeap(), 0, stackConfig);
     return status;
 }

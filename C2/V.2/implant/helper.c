@@ -421,7 +421,7 @@ HANDLE CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, L
     printf("[*] Applying VEH squared AMSI Bypass via APC queued PIC stubs...\n");
     printf("[!] Well no, it bypasses only the main thread of powershell, but it's still a really good demo of the technique !\n");
     printf("[!] The things is that it's an othert clr thread that loads AMSI and not the main thread, so we would need to apply the bypass on all threads of the process to be really effective, \n but that's a bit more work to do in C ad i don't know how to do that..!\n");
-    ApplyVehBypass(Pi->hProcess, Pi->hThread);
+    //ApplyVehBypass(Pi->hProcess, Pi->hThread);
 
 
 cleanup:

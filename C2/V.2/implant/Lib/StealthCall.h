@@ -37,19 +37,18 @@ typedef struct _UNWIND_INFO {
 } UNWIND_INFO, * PUNWIND_INFO;
 
 typedef struct _STACK_CONFIG {
-    PVOID pSpoofed1_ret;
-    ULONG64 Spoofed1StackSize;
-    PVOID pSpoofed2_ret;
-    ULONG64 Spoofed2StackSize;
-    PVOID pJmpRbxGadget;
-    PVOID pAddRSPRetGadget;
-    ULONG64 AddRspSize;
-    ULONG64 SpoofedGadgetSize;
-    PVOID pTarget;             // The Syscall addr
-    PVOID pArgs;
-    ULONG64 dwNumberOfArgs;
-    ULONG64 ssn;               // Syscall SSN
-} STACK_CONFIG, *PSTACK_CONFIG;
+    PVOID pSpoofed1_ret;       // 0x00
+    ULONG64 Spoofed1StackSize; // 0x08
+    PVOID pSpoofed2_ret;       // 0x10
+    ULONG64 Spoofed2StackSize; // 0x18
+    PVOID pJmpRbxGadget;       // 0x20
+    PVOID pAddRSPRetGadget;    // 0x28
+    ULONG64 AddRspSize;        // 0x30
+    PVOID pTarget;             // 0x38
+    PVOID pArgs;               // 0x40
+    ULONG64 dwNumberOfArgs;    // 0x48  <-- Changed from DWORD to ULONG64
+    ULONG64 ssn;               // 0x50  <-- Changed from DWORD to ULONG64
+} STACK_CONFIG, *PSTACK_CONFIG; 
 
 extern PVOID SpoofCall(PSTACK_CONFIG stackConfig);
 

