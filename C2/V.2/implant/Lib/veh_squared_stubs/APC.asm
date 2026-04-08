@@ -6,6 +6,8 @@ ApcStub:
     mov rbp, rsp
     sub rsp, 28h                ; 32 bytes shadow space + 8 bytes alignment
 
+    
+
     ; 2. RtlAddVectoredExceptionHandler(1, pVehHandler)
     mov rcx, 1                  ; CALL_FIRST
     mov rdx, 0xDDDDDDDDDDDDDDDD ; Placeholder for pRemoteVeh

