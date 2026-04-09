@@ -9,5 +9,6 @@ typedef NTSTATUS (NTAPI *pNtProtectVirtualMemory)(
     ULONG NewProtect,
     PULONG OldProtect
 );
+typedef BOOL (WINAPI * SetProcessValidCallTargets_t)(HANDLE, PVOID, SIZE_T, ULONG, PCFG_CALL_TARGET_INFO);
 
-BOOL ApplyVehBypass(HANDLE hProcess, HANDLE hThread);
+BOOL ApplyVehBypass(HANDLE hProcess, HANDLE hThread, PVOID ImageBase);

