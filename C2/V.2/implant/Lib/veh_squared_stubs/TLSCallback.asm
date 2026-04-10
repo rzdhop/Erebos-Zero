@@ -21,6 +21,8 @@ CustomCallback :
     ; Restauration de la stack
     mov rsp, rbp
     pop rbp
+
+    int3                     ; Breakpoint to trigger VEH and apply HWBP
 .ignore:
     ret
 
