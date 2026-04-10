@@ -16,7 +16,12 @@ BOOL WrapperReadProcessMemory(HANDLE hProcess, LPCVOID lpBaseAddress, LPVOID lpB
         (UINT64)nSize,
         (UINT64)lpNumberOfBytesRead);
 
-    return (status == 0);
+    if (status != 0) {
+        printf("[-] NtReadVirtualMemory failed: 0x%08X at address %p\n", status, lpBaseAddress);
+        return FALSE;
+    }
+
+    return TRUE;
 }
 
 BOOL WrapperWriteProcessMemory(HANDLE hProcess, LPVOID lpBaseAddress, LPCVOID lpBuffer, SIZE_T nSize, SIZE_T *lpNumberOfBytesWritten) {
@@ -41,9 +46,8 @@ BOOL WrapperWriteProcessMemory(HANDLE hProcess, LPVOID lpBaseAddress, LPCVOID lp
         (UINT64)lpNumberOfBytesWritten
     );
 
-    if (status != 0x00000000) {
-        // Optionnel : SetLastError(RtlNtStatusToDosError(status));
-        printf("[!] NtWriteVirtualMemory failed avec status: 0x%X\n", status);
+    if (status != 0) {
+        printf("[-] NtWriteVirtualMemory failed: 0x%08X at address %p\n", status, lpBaseAddress);
         return FALSE;
     }
 

