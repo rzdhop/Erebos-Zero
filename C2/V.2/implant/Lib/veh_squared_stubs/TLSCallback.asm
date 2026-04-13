@@ -4,10 +4,13 @@
 CustomCallback :
     ; (PVOID DllHandle, DWORD dwReason, PVOID Reserved)
 
-    ; RDX has "Reason". 2 == DLL_THREAD_ATTACH
-    cmp edx, 2               ; DLL_THREAD_ATTACH
-    jne .ignore
+    cmp edx, 1              ; DLL_PROCESS_ATTACH (apply on main thread)
+    je apply_bp
+    cmp edx, 2              ; DLL_THREAD_ATTACH
+    je apply_bp
+    ret
 
+apply_bp:
     ; Sauvegarde de la stack et alignement
     push rbp
     mov rbp, rsp
@@ -23,7 +26,6 @@ CustomCallback :
     pop rbp
 
     int3                     ; Breakpoint to trigger VEH and apply HWBP
-.ignore:
     ret
 
 debug_string:

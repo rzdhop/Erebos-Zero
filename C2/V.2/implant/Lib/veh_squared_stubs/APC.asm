@@ -6,7 +6,6 @@ ApcStub:
     mov rbp, rsp
     sub rsp, 20h
 
-    ; CETTE PARTIE FAIS TOUT CRASH, si je l'enlève le processus ne crash plus mais le VEH ne s'installe pas (pas de breakpoint dans le handler)
     mov rax, 0x1337133713371337
     lea rcx, [rel debug_string]
     call rax                 ; OutputDebugStringA
@@ -19,7 +18,8 @@ ApcStub:
     call rax
 
     ; 3. Trigger VEH to apply HWBP on DR0
-    int3
+    ; /!\ We let the TLS callback on main thread apply the int3
+    ; int3
 
     add rsp, 20h
     pop rbp
