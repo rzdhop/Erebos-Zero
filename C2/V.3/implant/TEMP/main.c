@@ -1,3 +1,27 @@
+#include <windows.h>
+#include <http.h>
+#pragma comment(lib, "httpapi.lib")
+
+#define COMPLETION_KEY_HTTP 1
+#define HTTP_RECEIVE_BUFFER_SIZE 4096
+
+// State machine for the asynchronous operation
+typedef enum _IO_STATE {
+    IoStateReceiveRequest,
+    IoStateSendResponse
+} IO_STATE;
+
+// Custom context wrapping OVERLAPPED
+typedef struct _HTTP_IO_CONTEXT {
+    OVERLAPPED Overlapped;       // MUST be the first member
+    HANDLE hReqQueue;            // Handle to the HTTP Request Queue
+    IO_STATE State;              // Current state of this operation
+    HTTP_REQUEST_ID RequestId;   // Unique ID assigned by http.sys
+    PCHAR RequestBuffer;         // Raw memory buffer for the HTTP packet
+    ULONG BufferLength;          // Size of the buffer
+    PHTTP_REQUEST pRequest;      // Pointer to the parsed request (mapped inside RequestBuffer)
+} HTTP_IO_CONTEXT, *PHTTP_IO_CONTEXT;
+
 DWORD WINAPI WorkerRoutine(LPVOID lpParam) {
     HANDLE hIocp = (HANDLE)lpParam;
     DWORD bytesTransferred = 0;
@@ -89,5 +113,11 @@ DWORD WINAPI WorkerRoutine(LPVOID lpParam) {
             }
         }
     }
+    return 0;
+}
+
+int main() {
+
+    
     return 0;
 }
