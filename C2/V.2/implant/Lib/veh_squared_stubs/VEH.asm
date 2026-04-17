@@ -14,23 +14,23 @@
     mov eax, [r9]       ; eax = ExceptionCode 
 
     cmp eax, 0x80000003 ; EXCEPTION_BREAKPOINT (int 3)
-    je handle_bp
+    je handle_int3
     cmp eax, 0x80000004 ; EXCEPTION_SINGLE_STEP (HWBP hit)
-    je handle_ss
+    je handle_hwbp
 
     xor eax, eax        ; EXCEPTION_CONTINUE_SEARCH
     ret
 
-    handle_bp:
+    handle_int3:
         ; --- ABI Compliant OutputDebugStringA Call ---
         push r8                     ; Save ContextRecord
-        sub rsp, 0x20               ; Allocate 32 bytes shadow space & align stack to 16 bytes
+        sub rsp, 0x28               ; Allocate 32 bytes shadow space & align stack to 16 bytes
         
         mov rax, 0xCCCCCCCCCCCCCCCC ; Placeholder for OutputDebugStringA
         lea rcx, [rel debug_string2]
         call rax
         
-        add rsp, 0x20               ; Cleanup shadow space
+        add rsp, 0x28               ; Cleanup shadow space
         pop r8                      ; Restore ContextRecord
         ; ---------------------------------------------
 
@@ -59,7 +59,7 @@
         mov eax, -1     ; EXCEPTION_CONTINUE_EXECUTION
         ret
 
-    handle_ss:
+    handle_hwbp:
         ; 1. Verify it's actually DR0 that triggered (Check DR6.B0)
         mov rax, [r8 + 0x68]        ; rax = CONTEXT_RECORD.Dr6
         test rax, 1
@@ -78,11 +78,13 @@
         ; --- ABI Compliant OutputDebugStringA Call ---
         push r8                     ; Save ContextRecord
         sub rsp, 0x20               ; Allocate 32 bytes shadow space & align stack to 16 bytes
+        push r9                     ; Save ExceptionRecord (not used here but good practice to preserve)
         
         mov rax, 0xBBBBBBBBBBBBBBBB ; Placeholder for OutputDebugStringA
         lea rcx, [rel debug_string1]
         call rax
         
+        pop r9                      ; Restore ExceptionRecord
         add rsp, 0x20               ; Cleanup shadow space
         pop r8                      ; Restore ContextRecord
         ; ---------------------------------------------

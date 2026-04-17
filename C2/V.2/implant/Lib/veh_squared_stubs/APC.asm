@@ -19,7 +19,7 @@ ApcStub:
 
     ; 3. Trigger VEH to apply HWBP on DR0
     ; /!\ We let the TLS callback on main thread apply the int3
-    ; int3
+    int3
 
     add rsp, 20h
     pop rbp

